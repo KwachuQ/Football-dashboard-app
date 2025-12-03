@@ -1,0 +1,10 @@
+streamlit>=1.51.0
+sqlalchemy>=2.0.44
+psycopg2-binary>=2.9.11
+pandas>=2.3.3
+plotly>=6.5.0
+matplotlib>=3.10.07
+altair>=5.5.0
+python-dotenv>=1.2.1
+pydantic>=2.12
+pydantic-settings>=2.1.0
