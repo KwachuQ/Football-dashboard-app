@@ -1,68 +1,130 @@
-import os
-from typing import Generator
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, scoped_session
+from contextlib import contextmanager
+from typing import Generator
+import logging
 
-# Load environment variables from .env if present
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-# Read credentials from environment (no hardcoded sensitive defaults)
-PG_USER = os.getenv("POSTGRES_USER")
-PG_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-PG_DB = os.getenv("POSTGRES_DB")
-PG_HOST = os.getenv("POSTGRES_HOST", "localhost")  # non-sensitive default
-PG_PORT = os.getenv("POSTGRES_PORT", "5432")       # non-sensitive default
+# Database engine and session factory
+_engine = None
+_SessionLocal = None
 
-# Fail fast if mandatory credentials are missing
-missing = [name for name, val in {
-    "POSTGRES_USER": PG_USER,
-    "POSTGRES_PASSWORD": PG_PASSWORD,
-    "POSTGRES_DB": PG_DB,
-}.items() if not val]
-if missing:
-    raise RuntimeError(f"Missing required database env vars: {', '.join(missing)}")
 
-from config.settings import get_settings
-settings = get_settings()
-DATABASE_URL = settings.build_sqlalchemy_url()
+def get_engine():
+    """Get or create database engine."""
+    global _engine
+    
+    if _engine is None:
+        from config.settings import get_settings
+        settings = get_settings()
+        
+        try:
+            _engine = create_engine(
+                settings.build_sqlalchemy_url(),
+                pool_size=settings.DB_POOL_SIZE,
+                max_overflow=settings.DB_MAX_OVERFLOW,
+                pool_recycle=settings.DB_POOL_RECYCLE,
+                pool_pre_ping=True,
+                echo=settings.SQLALCHEMY_ECHO,
+            )
+            logger.info("Database engine initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+            raise
+    
+    return _engine
 
-# Engine with connection pooling
-engine = create_engine(
-    DATABASE_URL,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    pool_recycle=settings.DB_POOL_RECYCLE,
-    echo=settings.SQLALCHEMY_ECHO,
-    future=True,
-)
 
-# Thread-safe session factory
-SessionLocal = scoped_session(
-    sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-)
+def get_session_factory():
+    """Get or create session factory."""
+    global _SessionLocal
+    
+    if _SessionLocal is None:
+        engine = get_engine()
+        _SessionLocal = scoped_session(
+            sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                bind=engine
+            )
+        )
+    
+    return _SessionLocal
+
+
+def init_db():
+    """Initialize database connection (legacy support)."""
+    get_engine()
+    get_session_factory()
+
 
 def get_db() -> Generator:
     """
-    Yield a session and ensure it closes after use.
+    Get database session.
+    
     Usage:
-        with contextlib.closing(next(get_db())) as db: ...
-    Or in frameworks that expect dependency yields.
+        db = next(get_db())
+        try:
+            # Use db
+        finally:
+            db.close()
     """
+    SessionLocal = get_session_factory()
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+
 def check_connection() -> bool:
     """
-    Quick connectivity check: returns True if 'SELECT 1' succeeds.
+    Check if database connection is working.
+    
+    Returns:
+        True if connection successful, False otherwise
     """
     try:
+        engine = get_engine()
+        
         with engine.connect() as conn:
-            return conn.execute(text("SELECT 1")).scalar() == 1
-    except Exception:
+            result = conn.execute(text("SELECT 1"))
+            return result.scalar() == 1
+    except Exception as e:
+        logger.error(f"Database connection check failed: {e}")
         return False
+
+
+@contextmanager
+def get_session():
+    """
+    Context manager for database sessions.
+    
+    Usage:
+        with get_session() as session:
+            # Use session
+    """
+    SessionLocal = get_session_factory()
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def close_db():
+    """Close database connections (useful for cleanup)."""
+    global _engine, _SessionLocal
+    
+    if _SessionLocal is not None:
+        _SessionLocal.remove()
+        _SessionLocal = None
+    
+    if _engine is not None:
+        _engine.dispose()
+        _engine = None
