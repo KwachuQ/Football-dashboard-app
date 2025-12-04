@@ -1,0 +1,28 @@
+from decimal import Decimal
+from sqlalchemy import Column, Integer, String, BigInteger, Numeric
+from src.models.base import Base
+
+
+class TeamForm(Base):
+    __tablename__ = "mart_team_form"
+    
+    team_id = Column(Integer, primary_key=True)
+    team_name = Column(String)
+    season_id = Column(Integer, primary_key=True)
+    season_name = Column(String)
+    season_year = Column(String)
+    last_5_results = Column(String)
+    points_last_5 = Column(BigInteger)
+    wins_last_5 = Column(BigInteger)
+    draws_last_5 = Column(BigInteger)
+    losses_last_5 = Column(BigInteger)
+    goals_for_last_5 = Column(BigInteger)
+    goals_against_last_5 = Column(BigInteger)
+    halftime_leading_count = Column(BigInteger)
+    halftime_leading_wins = Column(BigInteger)
+    halftime_leading_draws = Column(BigInteger)
+    halftime_leading_losses = Column(BigInteger)
+    halftime_leading_win_pct = Column(Numeric)
+    conceded_first_count = Column(BigInteger)
+    points_after_conceding_first = Column(BigInteger)
+    points_pct_after_conceding_first = Column(Numeric)
