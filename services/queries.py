@@ -1,8 +1,14 @@
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import List, Optional, Dict, Any
-from sqlalchemy import select, func, desc, and_, or_
+from sqlalchemy import column, select, func, desc, and_, or_, text
 from sqlalchemy.orm import Session
 import pandas as pd
+from services.db import get_engine
+from services.cache import cache_query_result
+import logging
+
+logger = logging.getLogger(__name__)
 
 from src.models import (
     TeamOverview,
@@ -159,9 +165,9 @@ def get_team_form(
             'goals_for_last_5': result.goals_for_last_5,
             'goals_against_last_5': result.goals_against_last_5,
             'halftime_leading_count': result.halftime_leading_count,
-            'halftime_leading_win_pct': float(result.halftime_leading_win_pct) if result.halftime_leading_win_pct else None,
+            'halftime_leading_win_pct': float(getattr(result, 'halftime_leading_win_pct')) if getattr(result, 'halftime_leading_win_pct') is not None else None,
             'conceded_first_count': result.conceded_first_count,
-            'points_pct_after_conceding_first': float(result.points_pct_after_conceding_first) if result.points_pct_after_conceding_first else None,
+            'points_pct_after_conceding_first': float(getattr(result, 'points_pct_after_conceding_first')) if getattr(result, 'points_pct_after_conceding_first') is not None else None,
         }
     finally:
         db.close()
@@ -213,15 +219,20 @@ def get_team_stats(
         if not result:
             return {}
         
-        # Convert SQLAlchemy model to dict, excluding private attributes
+        # Convert SQLAlchemy model to dict, handling Decimal types
+        from sqlalchemy import inspect
+        mapper = inspect(result.__class__)
+        
         return {
-            key: (float(value) if isinstance(value, type(result.points_per_game)) else value)
-            for key, value in result.__dict__.items()
-            if not key.startswith('_')
+            column.key: (
+                float(getattr(result, column.key)) 
+                if isinstance(getattr(result, column.key), Decimal)
+                else getattr(result, column.key)
+            )
+            for column in mapper.columns
         }
     finally:
         db.close()
-
 
 def get_head_to_head(
     team1_id: int,
@@ -268,7 +279,8 @@ def get_head_to_head(
             }
         
         # Normalize so team1 is always first
-        is_swapped = result.team_id_1 == team2_id
+        # Get the actual Python boolean value, not SQLAlchemy expression
+        is_swapped = bool(result.team_id_1 == team2_id)
         
         return {
             'team1_id': team1_id,
@@ -281,8 +293,8 @@ def get_head_to_head(
             'team2_wins': result.team_1_wins if is_swapped else result.team_2_wins,
             'team1_goals': result.team_2_goals if is_swapped else result.team_1_goals,
             'team2_goals': result.team_1_goals if is_swapped else result.team_2_goals,
-            'team1_avg_goals': float(result.team_2_avg_goals) if is_swapped else float(result.team_1_avg_goals),
-            'team2_avg_goals': float(result.team_1_avg_goals) if is_swapped else float(result.team_2_avg_goals),
+            'team1_avg_goals': float(getattr(result, 'team_2_avg_goals')) if is_swapped and getattr(result, 'team_2_avg_goals') is not None else (float(getattr(result, 'team_1_avg_goals')) if getattr(result, 'team_1_avg_goals') is not None else None),
+            'team2_avg_goals': float(getattr(result, 'team_1_avg_goals')) if is_swapped and getattr(result, 'team_1_avg_goals') is not None else (float(getattr(result, 'team_2_avg_goals')) if getattr(result, 'team_2_avg_goals') is not None else None),
             'last_meeting_date': result.last_meeting_date,
             'last_5_results': result.last_5_results,
         }
@@ -318,11 +330,11 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
                 'match_date': r.match_date,
                 'home_team': r.home_team_name,
                 'away_team': r.away_team_name,
-                'home_win_prob': float(r.home_win_probability) if r.home_win_probability else None,
-                'draw_prob': float(r.draw_probability) if r.draw_probability else None,
-                'away_win_prob': float(r.away_win_probability) if r.away_win_probability else None,
-                'predicted_home_goals': float(r.predicted_home_goals) if r.predicted_home_goals else None,
-                'predicted_away_goals': float(r.predicted_away_goals) if r.predicted_away_goals else None,
+                'home_win_prob': float(getattr(r, 'home_win_probability')) if getattr(r, 'home_win_probability') is not None else None,
+                'draw_prob': float(getattr(r, 'draw_probability')) if getattr(r, 'draw_probability') is not None else None,
+                'away_win_prob': float(getattr(r, 'away_win_probability')) if getattr(r, 'away_win_probability') is not None else None,
+                'predicted_home_goals': float(getattr(r, 'predicted_home_goals')) if getattr(r, 'predicted_home_goals') is not None else None,
+                'predicted_away_goals': float(getattr(r, 'predicted_away_goals')) if getattr(r, 'predicted_away_goals') is not None else None,
                 'match_outlook': r.match_outlook,
                 'actual_home_score': r.actual_home_score,
                 'actual_away_score': r.actual_away_score,
@@ -421,24 +433,24 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
             'season_name': result.season_name,
             'matches_played': result.matches_played,
             # Overall stats
-            'overall_win_pct': float(result.overall_win_pct) if result.overall_win_pct else None,
-            'overall_btts_pct': float(result.overall_btts_pct) if result.overall_btts_pct else None,
-            'overall_clean_sheet_pct': float(result.overall_clean_sheet_pct) if result.overall_clean_sheet_pct else None,
-            'overall_avg_goals': float(result.overall_avg_goals_per_match) if result.overall_avg_goals_per_match else None,
-            'overall_avg_scored': float(result.overall_avg_scored) if result.overall_avg_scored else None,
-            'overall_avg_conceded': float(result.overall_avg_conceded) if result.overall_avg_conceded else None,
+            'overall_win_pct': float(getattr(result, 'overall_win_pct')) if getattr(result, 'overall_win_pct') is not None else None,
+            'overall_btts_pct': float(getattr(result, 'overall_btts_pct')) if getattr(result, 'overall_btts_pct') is not None else None,
+            'overall_clean_sheet_pct': float(getattr(result, 'overall_clean_sheet_pct')) if getattr(result, 'overall_clean_sheet_pct') is not None else None,
+            'overall_avg_goals': float(getattr(result, 'overall_avg_goals_per_match')) if getattr(result, 'overall_avg_goals_per_match') is not None else None,
+            'overall_avg_scored': float(getattr(result, 'overall_avg_scored')) if getattr(result, 'overall_avg_scored') is not None else None,
+            'overall_avg_conceded': float(getattr(result, 'overall_avg_conceded')) if getattr(result, 'overall_avg_conceded') is not None else None,
             # Home stats
             'home_matches': result.home_matches_played,
-            'home_win_pct': float(result.home_win_pct) if result.home_win_pct else None,
-            'home_btts_pct': float(result.home_btts_pct) if result.home_btts_pct else None,
-            'home_clean_sheet_pct': float(result.home_clean_sheet_pct) if result.home_clean_sheet_pct else None,
-            'home_avg_goals': float(result.home_avg_goals_per_match) if result.home_avg_goals_per_match else None,
+            'home_win_pct': float(getattr(result, 'home_win_pct')) if getattr(result, 'home_win_pct') is not None else None,
+            'home_btts_pct': float(getattr(result, 'home_btts_pct')) if getattr(result, 'home_btts_pct') is not None else None,
+            'home_clean_sheet_pct': float(getattr(result, 'home_clean_sheet_pct')) if getattr(result, 'home_clean_sheet_pct') is not None else None,
+            'home_avg_goals': float(getattr(result, 'home_avg_goals_per_match')) if getattr(result, 'home_avg_goals_per_match') is not None else None,
             # Away stats
             'away_matches': result.away_matches_played,
-            'away_win_pct': float(result.away_win_pct) if result.away_win_pct else None,
-            'away_btts_pct': float(result.away_btts_pct) if result.away_btts_pct else None,
-            'away_clean_sheet_pct': float(result.away_clean_sheet_pct) if result.away_clean_sheet_pct else None,
-            'away_avg_goals': float(result.away_avg_goals_per_match) if result.away_avg_goals_per_match else None,
+            'away_win_pct': float(getattr(result, 'away_win_pct')) if getattr(result, 'away_win_pct') is not None else None,
+            'away_btts_pct': float(getattr(result, 'away_btts_pct')) if getattr(result, 'away_btts_pct') is not None else None,
+            'away_clean_sheet_pct': float(getattr(result, 'away_clean_sheet_pct')) if getattr(result, 'away_clean_sheet_pct') is not None else None,
+            'away_avg_goals': float(getattr(result, 'away_avg_goals_per_match')) if getattr(result, 'away_avg_goals_per_match') is not None else None,
         }
     finally:
         db.close()
@@ -483,7 +495,7 @@ def get_data_freshness() -> pd.DataFrame:
                 'table_name': table,
                 'row_count': count,
                 'last_updated': None,  # Placeholder - add updated_at column to tables
-                'status': 'OK' if count > 0 else 'EMPTY'
+                'status': 'OK' if count is not None and count > 0 else 'EMPTY'
             })
         
         return pd.DataFrame(freshness_data)
@@ -511,3 +523,151 @@ def get_all_seasons() -> pd.DataFrame:
         return pd.DataFrame(result, columns=['season_id', 'season_name', 'season_year'])
     finally:
         db.close()
+
+@cache_query_result(ttl=300)  # Cache for 5 minutes
+def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: Optional[int] = None) -> int:
+    """
+    Get count of upcoming fixtures.
+    
+    Args:
+        tournament_id: Optional tournament ID to filter by
+        season_id: Optional season ID to filter by
+    
+    Returns:
+        Count of upcoming fixtures
+    """
+    try:
+        engine = get_engine()
+        from sqlalchemy import text
+        
+        # Build query dynamically
+        sql = """
+        SELECT COUNT(*) as fixture_count
+        FROM gold.mart_upcoming_fixtures
+        WHERE start_timestamp > CURRENT_TIMESTAMP
+          AND status_type IN ('notstarted', 'scheduled')
+        """
+        
+        # Build params dict - don't include datetime in params
+        params = {}
+        
+        if tournament_id is not None:
+            sql += " AND tournament_id = :tournament_id"
+            params['tournament_id'] = tournament_id
+        
+        if season_id is not None:
+            sql += " AND season_id = :season_id"
+            params['season_id'] = season_id
+        
+        with engine.connect() as conn:
+            result = conn.execute(text(sql), params)
+            row = result.fetchone()
+            
+            if row:
+                return int(row[0])
+            return 0
+    
+    except Exception as e:
+        logger.error(f"Error getting upcoming fixtures count: {e}")
+        return 0
+
+
+@cache_query_result(ttl=300)
+def get_last_prediction_time(season_id: Optional[int] = None) -> Optional[datetime]:
+    """
+    Get timestamp of most recent prediction.
+    
+    Args:
+        season_id: Optional season ID to filter by
+    
+    Returns:
+        Datetime of last prediction or None
+    """
+    try:
+        engine = get_engine()
+        from sqlalchemy import text
+        
+        sql = """
+        SELECT MAX(created_at) as last_prediction
+        FROM gold.mart_match_predictions
+        """
+        
+        params = {}
+        
+        if season_id is not None:
+            sql += " WHERE season_id = :season_id"
+            params['season_id'] = season_id
+        
+        with engine.connect() as conn:
+            result = conn.execute(text(sql), params)
+            row = result.fetchone()
+            
+            if row and row[0] is not None:
+                # Convert to datetime if it's not already
+                if isinstance(row[0], datetime):
+                    return row[0]
+                else:
+                    return pd.to_datetime(row[0])
+            return None
+    
+    except Exception as e:
+        logger.error(f"Error getting last prediction time: {e}")
+        return None
+
+
+@cache_query_result(ttl=600)
+def get_upcoming_fixtures_list(
+    tournament_id: Optional[int] = None,
+    season_id: Optional[int] = None,
+    limit: int = 10
+) -> pd.DataFrame:
+    """
+    Get upcoming fixtures with team information.
+    
+    Args:
+        tournament_id: Optional tournament ID to filter by
+        season_id: Optional season ID to filter by
+        limit: Maximum number of fixtures to return
+    
+    Returns:
+        DataFrame with upcoming fixtures
+    """
+    try:
+        engine = get_engine()
+        from sqlalchemy import text
+        
+        sql = """
+        SELECT 
+            fixture_id,
+            home_team_name,
+            away_team_name,
+            start_timestamp,
+            round_number,
+            tournament_name
+        FROM gold.mart_upcoming_fixtures
+        WHERE start_timestamp > CURRENT_TIMESTAMP
+          AND status_type IN ('notstarted', 'scheduled')
+        """
+        
+        params = {'limit': limit}
+        
+        if tournament_id is not None:
+            sql += " AND tournament_id = :tournament_id"
+            params['tournament_id'] = tournament_id
+        
+        if season_id is not None:
+            sql += " AND season_id = :season_id"
+            params['season_id'] = season_id
+        
+        sql += """
+        ORDER BY start_timestamp ASC
+        LIMIT :limit
+        """
+        
+        with engine.connect() as conn:
+            df = pd.read_sql(text(sql), conn, params=params)
+            return df
+    
+    except Exception as e:
+        logger.error(f"Error getting upcoming fixtures: {e}")
+        return pd.DataFrame()
