@@ -109,7 +109,8 @@ def get_upcoming_fixtures(
                 df = df.merge(
                     predictions[['match_id', 'home_win_prob', 'draw_prob', 
                                 'away_win_prob', 'predicted_home_goals', 
-                                'predicted_away_goals', 'match_outlook']],
+                                'predicted_away_goals', 'match_outlook', 
+                                'home_win_fair_odds', 'draw_fair_odds', 'away_win_fair_odds']],
                     on='match_id',
                     how='left'
                 )
@@ -325,45 +326,21 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
         # Convert to DataFrame - handle integer probability values (0-100 range)
         data = []
         for r in result:
-            # Debug: Check what values we're getting
-            print(f"Match {r.match_id}: home_win_prob={r.home_win_probability}, type={type(r.home_win_probability)}")
-            
             row = {
                 'match_id': r.match_id,
                 'match_date': r.match_date,
                 'home_team': r.home_team_name,
                 'away_team': r.away_team_name,
+                'home_win_prob': float(r.home_win_probability) / 100 if r.home_win_probability is not None else None,
+                'draw_prob': float(r.draw_probability) / 100 if r.draw_probability is not None else None,
+                'away_win_prob': float(r.away_win_probability) / 100 if r.away_win_probability is not None else None,
+                'predicted_home_goals': float(r.predicted_home_goals) if r.predicted_home_goals is not None else None,
+                'predicted_away_goals': float(r.predicted_away_goals) if r.predicted_away_goals is not None else None,
+                'match_outlook': r.match_outlook,
+                'home_win_fair_odds': float(r.home_win_fair_odds) if r.home_win_fair_odds is not None else None,
+                'draw_fair_odds': float(r.draw_fair_odds) if r.draw_fair_odds is not None else None,
+                'away_win_fair_odds': float(r.away_win_fair_odds) if r.away_win_fair_odds is not None else None,
             }
-            
-            # Handle probability values - they are stored as integers (0-100)
-            # Convert to decimal (0-1) for consistency with the app
-            if r.home_win_probability is not None:
-                row['home_win_prob'] = float(r.home_win_probability) / 100.0
-            else:
-                row['home_win_prob'] = None
-                
-            if r.draw_probability is not None:
-                row['draw_prob'] = float(r.draw_probability) / 100.0
-            else:
-                row['draw_prob'] = None
-                
-            if r.away_win_probability is not None:
-                row['away_win_prob'] = float(r.away_win_probability) / 100.0
-            else:
-                row['away_win_prob'] = None
-            
-            if r.predicted_home_goals is not None:
-                row['predicted_home_goals'] = float(r.predicted_home_goals)
-            else:
-                row['predicted_home_goals'] = None
-                
-            if r.predicted_away_goals is not None:
-                row['predicted_away_goals'] = float(r.predicted_away_goals)
-            else:
-                row['predicted_away_goals'] = None
-            
-            row['match_outlook'] = r.match_outlook
-            
             data.append(row)
         
         return pd.DataFrame(data)

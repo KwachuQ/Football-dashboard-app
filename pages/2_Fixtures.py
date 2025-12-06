@@ -66,7 +66,6 @@ try:
         fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
         
         # Add team form (last 5 matches)
-        # Add team form (last 5 matches)
         def get_form_string(team_id):
             """Get form string (e.g., 'WWDLL') for a team."""
             try:
@@ -91,6 +90,29 @@ try:
                 # Log the error but don't break the page
                 print(f"Error getting form for team {team_id}: {e}")
                 return "N/A"
+        
+        def format_form_html(form_string):
+            """Convert form string to HTML with colored boxes."""
+            if form_string == "N/A" or not form_string:
+                return "N/A"
+            
+            colors = {
+                'W': '#22c55e',  # Green
+                'D': '#eab308',  # Yellow
+                'L': '#ef4444'   # Red
+            }
+            
+            html_parts = []
+            for char in form_string:
+                color = colors.get(char, '#6b7280')  # Gray for unknown
+                html_parts.append(
+                    f'<span style="display:inline-block; width:20px; height:20px; '
+                    f'background-color:{color}; color:white; text-align:center; '
+                    f'line-height:20px; margin:1px; border-radius:3px; '
+                    f'font-weight:bold; font-size:12px;">{char}</span>'
+                )
+            
+            return ''.join(html_parts)
 
         # Get unique team IDs and convert to Python int
         unique_team_ids = pd.concat([
@@ -110,6 +132,10 @@ try:
         # Map back (pandas will handle the conversion)
         fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
         fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        
+        # Create HTML formatted form for display
+        fixtures_df['home_form_html'] = fixtures_df['home_form'].apply(format_form_html)
+        fixtures_df['away_form_html'] = fixtures_df['away_form'].apply(format_form_html)
 
         
         # Add Head-to-Head records
@@ -133,13 +159,12 @@ try:
                 axis=1
             )
         
-        # Display enhanced fixtures table
         display_df = fixtures_df[[
             'match_date',
             'home_team',
-            'home_form',
+            'home_form_html',
             'away_team',
-            'away_form',
+            'away_form_html',
             'h2h',
             'prediction',
             'round_number',
@@ -158,52 +183,127 @@ try:
             'Round',
             'Tournament'
         ]
+        # Display enhanced fixtures table using markdown for HTML rendering
+        st.markdown("### 📋 Fixtures Overview")
         
-        st.dataframe(
-            display_df,
-            column_config={
-                'Date': st.column_config.DatetimeColumn('Date', format='DD/MM/YYYY HH:mm'),
-                'Form (H)': st.column_config.TextColumn('Form (H)', help="Last 5 matches: W=Win, D=Draw, L=Loss"),
-                'Form (A)': st.column_config.TextColumn('Form (A)', help="Last 5 matches: W=Win, D=Draw, L=Loss"),
-                'H2H (W-D-L)': st.column_config.TextColumn('H2H', help="Home Wins - Draws - Away Wins"),
-                'Prediction': st.column_config.TextColumn('Prediction', help="Model prediction with probability"),
-            },
-            width='stretch',
-            hide_index=True
-        )
+        # Convert dataframe to HTML table with custom styling
+        html_table = '<table style="width:100%; border-collapse: collapse;">'
+        html_table += '<thead><tr style="background-color: #f0f2f6;">'
+        for col in ['Date', 'Home Team', 'Form (H)', 'Away Team', 'Form (A)', 'H2H (W-D-L)', 'Prediction', 'Round', 'Tournament']:
+            html_table += f'<th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">{col}</th>'
+        html_table += '</tr></thead><tbody>'
         
-        # Export button
-        csv = display_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download as CSV",
-            data=csv,
-            file_name=f"fixtures_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-        )
+        for idx, row in display_df.iterrows():
+            html_table += '<tr style="border-bottom: 1px solid #eee;">'
+            html_table += f'<td style="padding: 10px;">{row["Date"].strftime("%Y-%m-%d %H:%M")}</td>'
+            html_table += f'<td style="padding: 10px;">{row["Home Team"]}</td>'
+            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "home_form_html"]}</td>'
+            html_table += f'<td style="padding: 10px;">{row["Away Team"]}</td>'
+            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "away_form_html"]}</td>'
+            html_table += f'<td style="padding: 10px; text-align: center;">{row["H2H (W-D-L)"]}</td>'
+            html_table += f'<td style="padding: 10px;">{row["Prediction"]}</td>'
+            html_table += f'<td style="padding: 10px; text-align: center;">{row["Round"]}</td>'
+            html_table += f'<td style="padding: 10px;">{row["Tournament"]}</td>'
+            html_table += '</tr>'
         
-        # Show detailed stats in expander
-        with st.expander("📊 View Detailed Match Info"):
-            selected_match = st.selectbox(
-                "Select a match",
-                options=range(len(fixtures_df)),
-                format_func=lambda x: f"{fixtures_df.iloc[x]['home_team']} vs {fixtures_df.iloc[x]['away_team']}"
-            )
-            
-            match = fixtures_df.iloc[selected_match]
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Home Win Probability", 
-                         f"{float(match.get('home_win_prob', 0)) * 100:.1f}%" if not pd.isna(match.get('home_win_prob')) else "N/A")
-            
-            with col2:
-                st.metric("Draw Probability",
-                         f"{float(match.get('draw_prob', 0)) * 100:.1f}%" if not pd.isna(match.get('draw_prob')) else "N/A")
-            
-            with col3:
-                st.metric("Away Win Probability",
-                         f"{float(match.get('away_win_prob', 0)) * 100:.1f}%" if not pd.isna(match.get('away_win_prob')) else "N/A")
+        html_table += '</tbody></table>'
+        
+        st.markdown(html_table, unsafe_allow_html=True)
+        
+        # Detailed match view with expanders
+        st.markdown("---")
+        st.subheader("📊 Detailed Match Information")
+        
+        for idx, match in fixtures_df.iterrows():
+            with st.expander(f"🏆 {match['home_team']} vs {match['away_team']} - {match['match_date'].strftime('%Y-%m-%d %H:%M')}"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("### 🎯 Match Prediction")
+                    if not pd.isna(match.get('home_win_prob')):
+                        home_prob = float(match['home_win_prob']) * 100
+                        draw_prob = float(match['draw_prob']) * 100
+                        away_prob = float(match['away_win_prob']) * 100
+                        
+                        st.metric("Home Win", f"{home_prob:.1f}%")
+                        st.metric("Draw", f"{draw_prob:.1f}%")
+                        st.metric("Away Win", f"{away_prob:.1f}%")
+                        
+                        # Outlook badge
+                        outlook = match.get('match_outlook', 'N/A')
+                        outlook_colors = {
+                            'HOME_FAVORITE': '🟢',
+                            'AWAY_FAVORITE': '🔵',
+                            'BALANCED': '🟡'
+                        }
+                        st.info(f"{outlook_colors.get(outlook, '⚪')} **{outlook.replace('_', ' ')}**")
+                    else:
+                        st.warning("No prediction available")
+                
+                with col2:
+                    st.markdown("### ⚽ Predicted Goals (xG)")
+                    if not pd.isna(match.get('predicted_home_goals')):
+                        home_xg = float(match['predicted_home_goals'])
+                        away_xg = float(match['predicted_away_goals'])
+                        total_xg = float(match.get('predicted_total_xg', home_xg + away_xg))
+                        
+                        st.metric(f"{match['home_team']}", f"{home_xg:.2f} xG", 
+                                 delta=None, delta_color="off")
+                        st.metric(f"{match['away_team']}", f"{away_xg:.2f} xG",
+                                 delta=None, delta_color="off")
+                        st.metric("Total Expected Goals", f"{total_xg:.2f}",
+                                 delta=None, delta_color="off")
+                        
+                        # Visual bar comparison
+                        total = home_xg + away_xg
+                        if total > 0:
+                            home_pct = (home_xg / total) * 100
+                            away_pct = (away_xg / total) * 100
+                            st.progress(home_pct / 100, text=f"Home: {home_pct:.0f}% | Away: {away_pct:.0f}%")
+                    else:
+                        st.warning("No xG prediction available")
+                
+                with col3:
+                    st.markdown("### 💰 Fair Odds")
+                    if not pd.isna(match.get('home_win_fair_odds')):
+                        home_odds = float(match['home_win_fair_odds'])
+                        draw_odds = float(match['draw_fair_odds'])
+                        away_odds = float(match['away_win_fair_odds'])
+                        
+                        # Display as betting odds format
+                        st.metric("Home Win Odds", f"{home_odds:.2f}", 
+                                 help="Fair betting odds for home win")
+                        st.metric("Draw Odds", f"{draw_odds:.2f}",
+                                 help="Fair betting odds for draw")
+                        st.metric("Away Win Odds", f"{away_odds:.2f}",
+                                 help="Fair betting odds for away win")
+                        
+                        # Show implied probabilities
+                        st.caption("_Calculated fair odds based on prediction model_")
+                    else:
+                        st.warning("No odds available")
+                
+                # Additional match info
+                st.markdown("---")
+                col4, col5, col6 = st.columns(3)
+                
+                with col4:
+                    st.markdown("**📅 Match Details**")
+                    st.text(f"Date: {match['match_date'].strftime('%Y-%m-%d')}")
+                    st.text(f"Time: {match['match_date'].strftime('%H:%M')}")
+                    st.text(f"Round: {match['round_number']}")
+                
+                with col5:
+                    st.markdown("**📊 Recent Form**")
+                    st.markdown(f"**{match['home_team']}:** {match.get('home_form_html', 'N/A')}", unsafe_allow_html=True)
+                    st.markdown(f"**{match['away_team']}:** {match.get('away_form_html', 'N/A')}", unsafe_allow_html=True)
+                
+                with col6:
+                    st.markdown("**🏆 Competition**")
+                    st.text(f"{match['tournament']}")
+                    st.text(f"Season: {match.get('season_year', 'N/A')}")
+                    if match.get('h2h'):
+                        st.text(f"H2H: {match['h2h']}")
 
 except Exception as e:
     st.error(f"Error loading fixtures: {e}")
