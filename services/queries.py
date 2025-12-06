@@ -19,7 +19,7 @@ from src.models import (
     TeamPossession,
     TeamDiscipline,
     HeadToHead,
-    MatchPredictions,
+    UpcomingPredictions,
     TeamBttsAnalysis,
 )
 from services.db import get_db
@@ -303,7 +303,7 @@ def get_head_to_head(
 
 def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
     """
-    Get predictions for specific matches.
+    Get predictions for specific matches from upcoming_predictions table.
     
     Args:
         match_ids: List of match identifiers
@@ -313,8 +313,8 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
     """
     db = next(get_db())
     try:
-        query = select(MatchPredictions).where(
-            MatchPredictions.match_id.in_(match_ids)
+        query = select(UpcomingPredictions).where(
+            UpcomingPredictions.match_id.in_(match_ids)
         )
         
         result = db.execute(query).scalars().all()
@@ -322,31 +322,54 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
         if not result:
             return pd.DataFrame()
         
-        # Convert to DataFrame
-        data = [
-            {
+        # Convert to DataFrame - handle integer probability values (0-100 range)
+        data = []
+        for r in result:
+            # Debug: Check what values we're getting
+            print(f"Match {r.match_id}: home_win_prob={r.home_win_probability}, type={type(r.home_win_probability)}")
+            
+            row = {
                 'match_id': r.match_id,
                 'match_date': r.match_date,
                 'home_team': r.home_team_name,
                 'away_team': r.away_team_name,
-                'home_win_prob': float(getattr(r, 'home_win_probability')) if getattr(r, 'home_win_probability') is not None else None,
-                'draw_prob': float(getattr(r, 'draw_probability')) if getattr(r, 'draw_probability') is not None else None,
-                'away_win_prob': float(getattr(r, 'away_win_probability')) if getattr(r, 'away_win_probability') is not None else None,
-                'predicted_home_goals': float(getattr(r, 'predicted_home_goals')) if getattr(r, 'predicted_home_goals') is not None else None,
-                'predicted_away_goals': float(getattr(r, 'predicted_away_goals')) if getattr(r, 'predicted_away_goals') is not None else None,
-                'match_outlook': r.match_outlook,
-                'actual_home_score': r.actual_home_score,
-                'actual_away_score': r.actual_away_score,
-                'prediction_correct': r.prediction_correct,
             }
-            for r in result
-        ]
+            
+            # Handle probability values - they are stored as integers (0-100)
+            # Convert to decimal (0-1) for consistency with the app
+            if r.home_win_probability is not None:
+                row['home_win_prob'] = float(r.home_win_probability) / 100.0
+            else:
+                row['home_win_prob'] = None
+                
+            if r.draw_probability is not None:
+                row['draw_prob'] = float(r.draw_probability) / 100.0
+            else:
+                row['draw_prob'] = None
+                
+            if r.away_win_probability is not None:
+                row['away_win_prob'] = float(r.away_win_probability) / 100.0
+            else:
+                row['away_win_prob'] = None
+            
+            if r.predicted_home_goals is not None:
+                row['predicted_home_goals'] = float(r.predicted_home_goals)
+            else:
+                row['predicted_home_goals'] = None
+                
+            if r.predicted_away_goals is not None:
+                row['predicted_away_goals'] = float(r.predicted_away_goals)
+            else:
+                row['predicted_away_goals'] = None
+            
+            row['match_outlook'] = r.match_outlook
+            
+            data.append(row)
         
         return pd.DataFrame(data)
     finally:
         db.close()
-
-
+        
 def get_league_standings(season_id: int) -> pd.DataFrame:
     """
     Get league standings (team overview sorted by points).

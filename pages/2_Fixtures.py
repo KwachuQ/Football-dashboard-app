@@ -42,41 +42,37 @@ try:
         # Extract match IDs for predictions
         match_ids = fixtures_df['match_id'].tolist()
         
-        # Fetch predictions
-        predictions_df = get_match_predictions(match_ids)
-        
         # Create prediction summary column
         def format_prediction(row):
             """Format prediction as readable string."""
-            if pd.isna(row.get('home_win_prob')):
+            # Check if probabilities exist and are not None/NaN
+            if pd.isna(row.get('home_win_prob')) or row.get('home_win_prob') is None:
                 return "No prediction"
             
+            # Values are already in 0-1 range
             home_prob = float(row['home_win_prob']) * 100
             draw_prob = float(row['draw_prob']) * 100
             away_prob = float(row['away_win_prob']) * 100
             
             if home_prob > draw_prob and home_prob > away_prob:
-                return f"🏠 Home ({home_prob:.0f}%)"
+                return f"Home Win ({home_prob:.1f}%)"
             elif away_prob > draw_prob and away_prob > home_prob:
-                return f"✈️ Away ({away_prob:.0f}%)"
+                return f"Away Win ({away_prob:.1f}%)"
             else:
-                return f"🤝 Draw ({draw_prob:.0f}%)"
+                return f"Draw ({draw_prob:.1f}%)"
         
-        # Merge predictions into fixtures
-        if not predictions_df.empty:
-            fixtures_df = fixtures_df.merge(
-                predictions_df[['match_id', 'home_win_prob', 'draw_prob', 'away_win_prob']],
-                on='match_id',
-                how='left'
-            )
-            fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
-        else:
-            fixtures_df['prediction'] = "No prediction"
+        # Apply prediction formatting directly
+
+        fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
         
         # Add team form (last 5 matches)
-        def get_form_string(team_id, season_id=None):
+        # Add team form (last 5 matches)
+        def get_form_string(team_id):
             """Get form string (e.g., 'WWDLL') for a team."""
             try:
+                # Convert numpy.int64 to native Python int
+                team_id = int(team_id)
+                
                 # get_team_form returns dict with all TeamForm columns
                 form_data = get_team_form(team_id=team_id, last_n_matches=5)
                 
@@ -96,11 +92,14 @@ try:
                 print(f"Error getting form for team {team_id}: {e}")
                 return "N/A"
 
-        # Get unique team IDs
+        # Get unique team IDs and convert to Python int
         unique_team_ids = pd.concat([
             fixtures_df['home_team_id'],
             fixtures_df['away_team_id']
         ]).unique()
+
+        # Convert numpy types to Python int
+        unique_team_ids = [int(tid) for tid in unique_team_ids]
 
         # Build form cache with progress indicator
         with st.spinner("Loading team forms..."):
@@ -108,8 +107,10 @@ try:
             for team_id in unique_team_ids:
                 form_cache[team_id] = get_form_string(team_id)
 
-        fixtures_df['home_form'] = fixtures_df['home_team_id'].map(form_cache)
-        fixtures_df['away_form'] = fixtures_df['away_team_id'].map(form_cache)
+        # Map back (pandas will handle the conversion)
+        fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+
         
         # Add Head-to-Head records
         def get_h2h_record(home_id, away_id):

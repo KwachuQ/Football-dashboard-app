@@ -10,6 +10,7 @@ from src.models.head_to_head import HeadToHead
 from src.models.match_predictions import MatchPredictions
 from src.models.team_btts_analysis import TeamBttsAnalysis
 from src.models.upcoming_fixtures import UpcomingFixtures
+from src.models.upcoming_predictions import UpcomingPredictions
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "MatchPredictions",
     "TeamBttsAnalysis",
     "UpcomingFixtures",
+    "UpcomingPredictions",
 ]
