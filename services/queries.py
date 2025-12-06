@@ -118,60 +118,59 @@ def get_upcoming_fixtures(
     finally:
         db.close()
 
-def get_team_form(
-    team_id: int,
-    season_id: Optional[int] = None,
-    last_n_matches: int = 5
-) -> Dict[str, Any]:
+
+def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     """
-    Get team's recent form statistics.
+    Get team form statistics.
     
     Args:
-        team_id: Team identifier
-        season_id: Season to filter by (None for latest)
-        last_n_matches: Number of recent matches (5 or 10 supported)
-    
+        team_id: Team ID
+        last_n_matches: Number of recent matches (not used in current implementation)
+        
     Returns:
-        Dictionary with form metrics: results, points, wins, draws, losses,
-                                      goals_for, goals_against
+        Dictionary with form data
     """
+    from sqlalchemy import select, and_, func
+    from src.models.team_form import TeamForm
+    
+    # Convert numpy types to Python int to avoid psycopg2 adapter errors
+    team_id = int(team_id)
+    
     db = next(get_db())
     try:
-        query = select(TeamForm).where(TeamForm.team_id == team_id)
+        # Get most recent season for this team
+        subquery = select(func.max(TeamForm.season_id)).where(
+            TeamForm.team_id == team_id
+        ).scalar_subquery()
         
-        if season_id:
-            query = query.where(TeamForm.season_id == season_id)
-        else:
-            # Get latest season
-            subquery = select(func.max(TeamForm.season_id)).where(
-                TeamForm.team_id == team_id
-            ).scalar_subquery()
-            query = query.where(TeamForm.season_id == subquery)
+        query = select(TeamForm).where(
+            and_(
+                TeamForm.team_id == team_id,
+                TeamForm.season_id == subquery
+            )
+        )
         
         result = db.execute(query).scalar_one_or_none()
         
-        if not result:
-            return {}
+        if result:
+            return {
+                'team_id': result.team_id,
+                'team_name': result.team_name,
+                'season_id': result.season_id,
+                'season_name': result.season_name,
+                'last_5_results': result.last_5_results,
+                'points_last_5': result.points_last_5,
+                'wins_last_5': result.wins_last_5,
+                'draws_last_5': result.draws_last_5,
+                'losses_last_5': result.losses_last_5,
+                'goals_for_last_5': result.goals_for_last_5,
+                'goals_against_last_5': result.goals_against_last_5,
+            }
         
-        return {
-            'team_id': result.team_id,
-            'team_name': result.team_name,
-            'season_name': result.season_name,
-            'last_5_results': result.last_5_results,
-            'points_last_5': result.points_last_5,
-            'wins_last_5': result.wins_last_5,
-            'draws_last_5': result.draws_last_5,
-            'losses_last_5': result.losses_last_5,
-            'goals_for_last_5': result.goals_for_last_5,
-            'goals_against_last_5': result.goals_against_last_5,
-            'halftime_leading_count': result.halftime_leading_count,
-            'halftime_leading_win_pct': float(getattr(result, 'halftime_leading_win_pct')) if getattr(result, 'halftime_leading_win_pct') is not None else None,
-            'conceded_first_count': result.conceded_first_count,
-            'points_pct_after_conceding_first': float(getattr(result, 'points_pct_after_conceding_first')) if getattr(result, 'points_pct_after_conceding_first') is not None else None,
-        }
+        return {}
+        
     finally:
         db.close()
-
 
 def get_team_stats(
     team_id: int,
@@ -570,50 +569,6 @@ def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: 
     except Exception as e:
         logger.error(f"Error getting upcoming fixtures count: {e}")
         return 0
-
-
-@cache_query_result(ttl=300)
-def get_last_prediction_time(season_id: Optional[int] = None) -> Optional[datetime]:
-    """
-    Get timestamp of most recent prediction.
-    
-    Args:
-        season_id: Optional season ID to filter by
-    
-    Returns:
-        Datetime of last prediction or None
-    """
-    try:
-        engine = get_engine()
-        from sqlalchemy import text
-        
-        sql = """
-        SELECT MAX(created_at) as last_prediction
-        FROM gold.mart_match_predictions
-        """
-        
-        params = {}
-        
-        if season_id is not None:
-            sql += " WHERE season_id = :season_id"
-            params['season_id'] = season_id
-        
-        with engine.connect() as conn:
-            result = conn.execute(text(sql), params)
-            row = result.fetchone()
-            
-            if row and row[0] is not None:
-                # Convert to datetime if it's not already
-                if isinstance(row[0], datetime):
-                    return row[0]
-                else:
-                    return pd.to_datetime(row[0])
-            return None
-    
-    except Exception as e:
-        logger.error(f"Error getting last prediction time: {e}")
-        return None
-
 
 @cache_query_result(ttl=600)
 def get_upcoming_fixtures_list(
