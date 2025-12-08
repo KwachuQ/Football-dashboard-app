@@ -5,20 +5,16 @@ from typing import Generator
 import os
 from dotenv import load_dotenv
 from services.cache import cache_resource_singleton
-from urllib.parse import quote_plus
 
 # Load environment variables
 load_dotenv()
 
 # Database configuration
-DB_USER = os.getenv("POSTGRES_USER")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-DB_HOST = os.getenv("POSTGRES_HOST")
-DB_PORT = os.getenv("POSTGRES_PORT")
-DB_NAME = os.getenv("POSTGRES_DB")
-DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
-
-encoded_password = quote_plus(DB_PASSWORD or "")
+DB_USER = os.getenv("POSTGRES_USER", "airflow")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "airflow")
+DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+DB_NAME = os.getenv("POSTGRES_DB", "dwh")
 
 # Connection pool settings
 POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
@@ -26,7 +22,7 @@ MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
 # Build connection string
-DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSL_MODE}"
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
 @cache_resource_singleton()
