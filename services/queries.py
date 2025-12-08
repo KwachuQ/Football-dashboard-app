@@ -475,8 +475,8 @@ def get_data_freshness() -> pd.DataFrame:
         'mart_team_discipline',
         'mart_match_predictions',
         'mart_head_to_head',
-        'mart_team_season_summary'
-        # 'mart_team_btts_analysis',
+        'mart_team_season_summary',
+        'mart_team_btts_analysis'
     ]
     
     freshness_data = []
