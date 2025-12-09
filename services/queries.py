@@ -343,15 +343,15 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
                 'match_date': r.match_date,
                 'home_team': r.home_team_name,
                 'away_team': r.away_team_name,
-                'home_win_prob': float(r.home_win_probability) / 100 if r.home_win_probability is not None else None,
-                'draw_prob': float(r.draw_probability) / 100 if r.draw_probability is not None else None,
-                'away_win_prob': float(r.away_win_probability) / 100 if r.away_win_probability is not None else None,
-                'predicted_home_goals': float(r.predicted_home_goals) if r.predicted_home_goals is not None else None,
-                'predicted_away_goals': float(r.predicted_away_goals) if r.predicted_away_goals is not None else None,
+                'home_win_prob': float(r.home_win_probability) / 100 if r.home_win_probability is not None else None, # type: ignore
+                'draw_prob': float(r.draw_probability) / 100 if r.draw_probability is not None else None, # type: ignore
+                'away_win_prob': float(r.away_win_probability) / 100 if r.away_win_probability is not None else None, # type: ignore
+                'predicted_home_goals': float(r.predicted_home_goals) if r.predicted_home_goals is not None else None, # type: ignore
+                'predicted_away_goals': float(r.predicted_away_goals) if r.predicted_away_goals is not None else None, # type: ignore
                 'match_outlook': r.match_outlook,
-                'home_win_fair_odds': float(r.home_win_fair_odds) if r.home_win_fair_odds is not None else None,
-                'draw_fair_odds': float(r.draw_fair_odds) if r.draw_fair_odds is not None else None,
-                'away_win_fair_odds': float(r.away_win_fair_odds) if r.away_win_fair_odds is not None else None,
+                'home_win_fair_odds': float(r.home_win_fair_odds) if r.home_win_fair_odds is not None else None, # type: ignore
+                'draw_fair_odds': float(r.draw_fair_odds) if r.draw_fair_odds is not None else None, # type: ignore
+                'away_win_fair_odds': float(r.away_win_fair_odds) if r.away_win_fair_odds is not None else None, # type: ignore
             }
             data.append(row)
         
@@ -397,8 +397,8 @@ def get_league_standings(season_id: int) -> pd.DataFrame:
         
         df = pd.DataFrame(result, columns=[
             'team_id', 'team_name', 'matches_played', 'wins', 'draws', 'losses',
-            'points', 'points_per_game', 'goals_for', 'goals_against',
-            'goal_difference', 'clean_sheets', 'clean_sheet_pct'
+            'total_points', 'points_per_game', 'goals_for', 'goals_against',
+            'goal_difference', 'clean_sheets', 'clean_sheet_percentage'
         ])
         
         # Add position column
