@@ -154,9 +154,6 @@ def date_range_filter(
             st.error("Start date cannot be after end date.")
             return (None, None)
         
-        # Display selected range
-        days_diff = (end_date - start_date).days
-        st.caption(f"Selected range: {start_date} to {end_date} ({days_diff} days)")
 
         return (start_date, end_date)
     

@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import sys
 import os
+from components.filters import date_range_filter
 
 # Ensure project root is importable
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -22,22 +23,78 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📅 Upcoming Fixtures")
+# ============================================================================
+# Compact Header with inline date info
+# ============================================================================
+col1, col2 = st.columns([3, 1])
 
+with col1:
+    st.title("⚽ Upcoming Fixtures")
+
+with col2:
+    # Empty space or optional quick actions
+    pass
+
+# ============================================================================
 # Sidebar filters
+# ============================================================================
 with st.sidebar:
     st.header("Filters")
-    days_ahead = st.slider("Days Ahead", 1, 30, 7)
-    limit = st.number_input("Max Fixtures", 10, 100, 50, step=10)
+    
+    today = date.today()
+    default_end = today + timedelta(days=14)
+    
+    start_date, end_date = date_range_filter(
+        key="fixtures_date_range",
+        min_date=today,
+        max_date=today + timedelta(days=365),
+        default_start=today,
+        default_end=default_end,
+    )
+    
+    st.markdown("---")
+    max_fixtures = st.number_input(
+        "Max Fixtures",
+        min_value=10,
+        max_value=200,
+        value=50,
+        step=10
+    )
+
+# ============================================================================
+# Compact date range display (single line)
+# ============================================================================
+if start_date and end_date:
+    days_count = (end_date - start_date).days + 1
+    
+    # Single line info
+    st.caption(
+        f"📅 Showing fixtures from **{start_date.strftime('%d %b')}** to "
+        f"**{end_date.strftime('%d %b %Y')}** ({days_count} days)"
+    )
+else:
+    st.warning("⚠️ Please select a valid date range")
+    st.stop()
 
 # Fetch fixtures
 try:
-    fixtures_df = get_upcoming_fixtures(days_ahead=days_ahead, limit=limit)
+    if not start_date or not end_date:
+        st.warning("⚠️ Please select a valid date range")
+        st.stop()
+    
+    with st.spinner("Loading fixtures..."):
+        # Update your query function to accept start_date and end_date
+        fixtures_df = get_upcoming_fixtures(
+            start_date=start_date,
+            end_date=end_date,
+            limit=max_fixtures
+        )
     
     if fixtures_df.empty:
-        st.warning("No upcoming fixtures found.")
+        st.info(f"📅 No fixtures found between {start_date} and {end_date}")
+        st.info("Try expanding your date range or check back later.")
     else:
-        st.success(f"Found {len(fixtures_df)} upcoming fixtures")
+        st.success(f"✅ Found {len(fixtures_df)} fixtures")
         
         # Extract match IDs for predictions
         match_ids = fixtures_df['match_id'].tolist()

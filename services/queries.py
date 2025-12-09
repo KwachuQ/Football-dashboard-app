@@ -28,7 +28,8 @@ from services.db import get_db
 def get_upcoming_fixtures(
     season_id: Optional[int] = None,
     tournament_id: Optional[int] = None,
-    days_ahead: int = 7,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
     limit: int = 50
 ) -> pd.DataFrame:
     """
@@ -48,9 +49,19 @@ def get_upcoming_fixtures(
     
     db = next(get_db())
     try:
-        today = datetime.now()
-        end_date = today + timedelta(days=days_ahead)
-        
+         # Default date range if not provided
+        if start_date is None:
+            start_date = date.today()
+        if end_date is None:
+            end_date = start_date + timedelta(days=14)
+
+        # Convert date to datetime for SQL comparison
+        # Set start to beginning of day (00:00:00)
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        # Set end to end of day (23:59:59)
+        end_datetime = datetime.combine(end_date, datetime.max.time())
+
+
         # Build dynamic SQL query
         sql = """
             SELECT 
@@ -70,12 +81,13 @@ def get_upcoming_fixtures(
                 match_slug,
                 extraction_date
             FROM gold.mart_upcoming_fixtures
-            WHERE start_timestamp >= :today
-              AND start_timestamp <= :end_date
+            WHERE start_timestamp >= :start_datetime
+              AND start_timestamp <= :end_datetime
               AND status_type IN ('notstarted', 'scheduled')
         """
         
-        params: Dict[str, Any] = {'today': today, 'end_date': end_date}
+        params: Dict[str, Any] = {'start_datetime': start_datetime,
+            'end_datetime': end_datetime}
         
         if season_id:
             sql += " AND season_id = :season_id"
@@ -626,3 +638,22 @@ def get_upcoming_fixtures_list(
     except Exception as e:
         logger.error(f"Error getting upcoming fixtures: {e}")
         return pd.DataFrame()
+    
+def get_team_names() -> pd.DataFrame:
+    """
+    Get list of all team names.
+    
+    Returns:
+        DataFrame with team_id and team_name
+    """
+    db = next(get_db())
+    try:
+        query = select(
+            TeamOverview.team_id,
+            TeamOverview.team_name
+        ).distinct().order_by(TeamOverview.team_name)
+        
+        result = db.execute(query).all()
+        return pd.DataFrame(result, columns=['team_id', 'team_name'])
+    finally:
+        db.close()
