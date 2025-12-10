@@ -14,6 +14,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import logging
+from scipy.stats import percentileofscore
 
 logger = logging.getLogger(__name__)
 
@@ -669,3 +670,158 @@ def calculate_goal_difference(
         Total goal difference
     """
     return sum(goals_for) - sum(goals_against)
+
+# ============================================================================
+# League Statistics and Percentiles
+# ============================================================================
+
+def calculate_league_stats_and_percentiles(
+    all_teams_df: pd.DataFrame,
+    team_stats: Dict[str, Any],
+    exclude_cols: Optional[List[str]] = None
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """
+    Calculate league-wide statistics and percentiles for a specific team.
+    
+    Args:
+        all_teams_df: DataFrame with statistics for all teams in the league
+        team_stats: Dictionary with statistics for the specific team
+        exclude_cols: List of columns to exclude from calculations
+    
+    Returns:
+        Tuple of (league_averages, percentiles)
+    """
+    if exclude_cols is None:
+        exclude_cols = ['team_id', 'team_name', 'season_id', 'season_name', 'season_year']
+    
+    # Get numeric columns only
+    numeric_cols = all_teams_df.select_dtypes(include=[np.number]).columns
+    numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
+    
+    # Calculate league averages
+    league_avg = all_teams_df[numeric_cols].mean().to_dict()
+    
+    # Calculate percentiles for each metric
+    percentiles = {}
+    for col in numeric_cols:
+        if col in team_stats and pd.notna(team_stats[col]):
+            try:
+                percentile = percentileofscore(
+                    all_teams_df[col].dropna(), 
+                    team_stats[col], 
+                    kind='rank'
+                )
+                percentiles[col] = round(float(percentile), 1)
+            except Exception as e:
+                logger.warning(f"Failed to calculate percentile for {col}: {e}")
+                percentiles[col] = None
+        else:
+            percentiles[col] = None
+    
+    return league_avg, percentiles
+
+
+def calculate_radar_scales(
+    all_teams_df: pd.DataFrame,
+    metrics: List[str],
+    padding_pct: float = 0.1
+) -> Dict[str, Tuple[float, float]]:
+    """
+    Calculate individual min/max scales for radar chart metrics.
+    """
+    scales = {}
+    
+    for metric in metrics:
+        if metric not in all_teams_df.columns:
+            logger.warning(f"Metric '{metric}' not found in DataFrame")
+            scales[metric] = (0, 1)
+            continue
+        
+        values = all_teams_df[metric].dropna()
+        
+        if len(values) == 0:
+            scales[metric] = (0, 1)
+            continue
+        
+        min_val = float(values.min())
+        max_val = float(values.max())
+        
+        range_val = max_val - min_val
+        if range_val == 0:
+            min_val = min_val * 0.9 if min_val > 0 else -0.5
+            max_val = max_val * 1.1 if max_val > 0 else 0.5
+        else:
+            padding = range_val * padding_pct
+            min_val = max(0, min_val - padding)
+            max_val = max_val + padding
+        
+        scales[metric] = (round(min_val, 2), round(max_val, 2))
+    
+    return scales
+
+
+def normalize_for_radar(
+    values: List[float],
+    scales: Dict[str, Tuple[float, float]],
+    metrics: List[str]
+) -> List[float]:
+    """
+    Normalize values to 0-1 scale for radar chart.
+    """
+    normalized = []
+    
+    for value, metric in zip(values, metrics):
+        if metric not in scales:
+            normalized.append(0.5)
+            continue
+        
+        min_val, max_val = scales[metric]
+        
+        if max_val - min_val == 0:
+            normalized.append(0.5)
+        else:
+            norm_val = (value - min_val) / (max_val - min_val)
+            norm_val = max(0, min(1, norm_val))
+            normalized.append(round(norm_val, 3))
+    
+    return normalized
+
+
+def get_all_teams_stats(
+    season_id: int,
+    stat_type: str
+) -> pd.DataFrame:
+    """
+    Fetch all teams statistics for a given season and stat type.
+    
+    Args:
+        season_id: Season ID to filter by
+        stat_type: Type of statistics ('attack', 'defense', 'possession', 'discipline')
+    
+    Returns:
+        DataFrame with all teams statistics
+    """
+    from services.db import get_engine
+    
+    table_map = {
+        'attack': 'mart_team_attack',
+        'defense': 'mart_team_defense',
+        'possession': 'mart_team_possession',
+        'discipline': 'mart_team_discipline'
+    }
+    
+    table_name = table_map.get(stat_type)
+    if not table_name:
+        raise ValueError(f"Invalid stat_type: {stat_type}")
+    
+    query = f"""
+        SELECT * 
+        FROM gold.{table_name}
+        WHERE season_id = {season_id}
+    """
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        df = pd.read_sql(query, conn)
+    
+    return df

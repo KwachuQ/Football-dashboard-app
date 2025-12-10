@@ -254,9 +254,9 @@ try:
             html_table += '<tr style="border-bottom: 1px solid #eee;">'
             html_table += f'<td style="padding: 10px;">{row["Date"].strftime("%Y-%m-%d %H:%M")}</td>'
             html_table += f'<td style="padding: 10px;">{row["Home Team"]}</td>'
-            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "home_form_html"]}</td>'
+            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "home_form_html"]}</td>' # type: ignore
             html_table += f'<td style="padding: 10px;">{row["Away Team"]}</td>'
-            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "away_form_html"]}</td>'
+            html_table += f'<td style="padding: 10px;">{fixtures_df.loc[idx, "away_form_html"]}</td>' # type: ignore
             html_table += f'<td style="padding: 10px; text-align: center;">{row["H2H (W-D-L)"]}</td>'
             html_table += f'<td style="padding: 10px;">{row["Prediction"]}</td>'
             html_table += f'<td style="padding: 10px; text-align: center;">{row["Round"]}</td>'
