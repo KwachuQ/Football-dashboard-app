@@ -33,6 +33,23 @@ st.set_page_config(
     layout="wide"
 )
 
+# Compact global styling
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 1rem;
+    }
+    h1, h2, h3 {
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 24px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -84,8 +101,7 @@ def prepare_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
 # MAIN PAGE
 # ============================================================================
 
-st.title("⚽ Team Statistics & Performance")
-st.markdown("Detailed team analysis across attack, defense, possession, and discipline")
+st.markdown("## ⚽ Team Statistics & Performance")
 
 # ============================================================================
 # SIDEBAR FILTERS
@@ -95,7 +111,6 @@ with st.sidebar:
     st.header("Filters")
     
     # Season selector
-    st.subheader("Season")
     try:
         seasons_df = get_all_seasons()
         if not seasons_df.empty:
@@ -115,23 +130,22 @@ with st.sidebar:
         else:
             st.error("No seasons available")
             st.stop()
+
     except Exception as e:
         logger.error(f"Failed to load seasons: {e}")
         st.error("Failed to load seasons")
         st.stop()
     
     # Time period selector
-    st.subheader("Time Period")
     form_window = st.select_slider(
-        "Form Window (matches)",
+        "Form window (matches)",
         options=[5, 10, 15, 20],
         value=5,
         key="teams_form_window",
-        help="Number of recent matches to analyze"
+        help="Number of recent matches to analyze",
     )
     
     # Home/Away toggle
-    st.subheader("Match Location")
     location = home_away_toggle(
         label="Filter by location",
         key="teams_location",
@@ -174,11 +188,20 @@ try:
         st.stop()
     
     # Get selected team info
-    team_row = standings_df[standings_df['team_id'] == selected_team_id].iloc[0]
+    team_filtered = standings_df[standings_df['team_id'] == selected_team_id]
+
+    if team_filtered.empty:
+        # Get the team name from session state if available
+        team_name = st.session_state.get('teams_team_selector_name', 'Selected team')
+        st.warning(f"⚠️ **{team_name}** did not play in Ekstraklasa during the **{selected_season_name}** season.")
+        st.info("👆 Please select a different team or change the season.")
+        st.stop()
+
+    team_row = team_filtered.iloc[0]
     team_name = team_row['team_name']
     team_position = int(team_row['position'])
     total_teams = len(standings_df)
-    
+        
 except Exception as e:
     logger.error(f"Failed to load teams: {e}")
     st.error(f"Failed to load team data: {e}")
@@ -192,41 +215,40 @@ except Exception as e:
 st.markdown(f"## {team_name}")
 
 # Quick stats header
-col1, col2, col3, col4, col5 = st.columns(5)
+with st.container(border=True):
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-with col1:
-    st.metric(
-        "League Position",
-        f"{team_position} / {total_teams}",
-        help="Current standing in the league"
-    )
+    with col1:
+        st.metric(
+            "Position",
+            f"{team_position}/{total_teams}",
+            help="Current league standing",
+        )
 
-with col2:
-    st.metric(
-        "Matches Played",
-        int(team_row.get('matches_played', 0))
-    )
+    with col2:
+        st.metric(
+            "MP",
+            int(team_row.get("matches_played", 0)),
+        )
 
-with col3:
-    st.metric(
-        "Points",
-        int(team_row.get('total_points', 0))
-    )
+    with col3:
+        st.metric(
+            "Pts",
+            int(team_row.get("total_points", 0)),
+        )
 
-with col4:
-    st.metric(
-        "Goal Difference",
-        f"{int(team_row.get('goal_difference', 0)):+d}",
-        help="Goals scored minus goals conceded"
-    )
+    with col4:
+        st.metric(
+            "GD",
+            f"{int(team_row.get('goal_difference', 0)):+d}",
+            help="Goals scored minus goals conceded",
+        )
 
-with col5:
-    st.metric(
-        "Points/Game",
-        format_number(team_row.get('points_per_game'), 2)
-    )
-
-st.markdown("---")
+    with col5:
+        st.metric(
+            "PPG",
+            format_number(team_row.get("points_per_game"), 2),
+        )
 
 # ============================================================================
 # TABS LAYOUT
@@ -246,56 +268,41 @@ overview_tab, form_tab, attack_tab, defense_tab, possession_tab, discipline_tab 
 # ============================================================================
 
 with overview_tab:
-    st.subheader("Season Summary")
-    
     try:
         overview_stats = get_team_stats(selected_team_id, "overview", selected_season_id)
-        
+
         if overview_stats:
-            # Performance metrics
-            st.markdown("### Performance Metrics")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Matches Played", int(safe_get(overview_stats, 'matches_played', 0)))
-                st.metric("Wins", int(safe_get(overview_stats, 'wins', 0)))
-            
-            with col2:
-                st.metric("Draws", int(safe_get(overview_stats, 'draws', 0)))
-                st.metric("Losses", int(safe_get(overview_stats, 'losses', 0)))
-            
-            with col3:
-                st.metric("Total Points", int(safe_get(overview_stats, 'total_points', 0)))
-                st.metric("Points/Game", format_number(safe_get(overview_stats, 'points_per_game'), 2))
-            
-            with col4:
-                wins = safe_get(overview_stats, 'wins', 0)
-                matches = safe_get(overview_stats, 'matches_played', 1)
-                win_rate = (wins / matches * 100) if matches > 0 else 0
-                st.metric("Win Rate", format_percentage(win_rate))
-            
-            st.markdown("---")
-            
-            # Goal statistics
-            st.markdown("### Goal Statistics")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Goals For", int(safe_get(overview_stats, 'goals_for', 0)))
-            
-            with col2:
-                st.metric("Goals Against", int(safe_get(overview_stats, 'goals_against', 0)))
-            
-            with col3:
-                goal_diff = safe_get(overview_stats, 'goal_difference', 0)
-                st.metric("Goal Difference", f"{int(goal_diff):+d}")
-            
-            with col4:
-                clean_sheets = safe_get(overview_stats, 'clean_sheets', 0)
-                st.metric("Clean Sheets", int(clean_sheets))
+            with st.expander("Performance metrics", expanded=True):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Matches", int(safe_get(overview_stats, "matches_played", 0)))
+                    st.metric("Wins", int(safe_get(overview_stats, "wins", 0)))
+                with col2:
+                    st.metric("Draws", int(safe_get(overview_stats, "draws", 0)))
+                    st.metric("Losses", int(safe_get(overview_stats, "losses", 0)))
+                with col3:
+                    st.metric("Pts", int(safe_get(overview_stats, "total_points", 0)))
+                    st.metric("PPG", format_number(safe_get(overview_stats, "points_per_game"), 2))
+                with col4:
+                    wins = safe_get(overview_stats, "wins", 0)
+                    matches = safe_get(overview_stats, "matches_played", 1)
+                    win_rate = (wins / matches * 100) if matches > 0 else 0
+                    st.metric("Win rate", format_percentage(win_rate))
+
+            with st.expander("Goal statistics", expanded=True):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Goals for", int(safe_get(overview_stats, "goals_for", 0)))
+                with col2:
+                    st.metric("Goals against", int(safe_get(overview_stats, "goals_against", 0)))
+                with col3:
+                    goal_diff = safe_get(overview_stats, "goal_difference", 0)
+                    st.metric("Goal diff", f"{int(goal_diff):+d}")
+                with col4:
+                    clean_sheets = safe_get(overview_stats, "clean_sheets", 0)
+                    st.metric("Clean sheets", int(clean_sheets))
         else:
             st.warning("No overview statistics available for this team.")
-    
     except Exception as e:
         logger.error(f"Error loading overview stats: {e}")
         st.error(f"Failed to load overview statistics: {e}")
@@ -305,133 +312,114 @@ with overview_tab:
 # ============================================================================
 
 with form_tab:
-    st.subheader("Recent Form")
-    
+    st.subheader("Recent form")
+
     try:
         form_data = get_team_form(selected_team_id, last_n_matches=form_window)
-        
+
         if form_data:
-            # Parse form results - use correct column name
-            form_string = safe_get(form_data, 'last_5_results', '')
+            form_string = safe_get(form_data, "last_5_results", "")
             results_list = parse_form_results(form_string, form_window)
-            
+
             if results_list:
-                # Form display
+                # Visual form indicator
+                colors = {"W": "#22c55e", "D": "#eab308", "L": "#ef4444"}
+                form_html = ""
+                for result in results_list:
+                    color = colors.get(result, "#6b7280")
+                    form_html += (
+                        f'<span style="display:inline-block; width:40px; height:40px; '
+                        f'background-color:{color}; color:white; text-align:center; '
+                        f'line-height:40px; margin:2px; border-radius:5px; '
+                        f'font-weight:bold; font-size:16px;">{result}</span>'
+                    )
+
+                st.markdown(form_html, unsafe_allow_html=True)
+                st.caption("W = Win | D = Draw | L = Loss (most recent on right)")
+
+                wins = results_list.count("W")
+                draws = results_list.count("D")
+                losses = results_list.count("L")
+
+                # Compact metrics row
+                with st.container(border=True):
+                    m1, m2, m3 = st.columns(3)
+                    with m1:
+                        st.metric("Wins", wins)
+                    with m2:
+                        st.metric("Draws", draws)
+                    with m3:
+                        st.metric("Losses", losses)
+
+                # Charts section – tighter columns, lower height
                 col1, col2 = st.columns([2, 1])
-                
+
+                points_list = results_to_points(results_list)
+                match_numbers = list(range(1, len(points_list) + 1))
+                form_df = pd.DataFrame(
+                    {"Match": match_numbers, "Points": points_list, "Result": results_list}
+                )
+
                 with col1:
-                    # Visual form indicator
-                    st.markdown("#### Recent Results")
-                    form_html = ""
-                    colors = {'W': '#22c55e', 'D': '#eab308', 'L': '#ef4444'}
-                    
-                    for result in results_list:
-                        color = colors.get(result, '#6b7280')
-                        form_html += f'<span style="display:inline-block; width:40px; height:40px; background-color:{color}; color:white; text-align:center; line-height:40px; margin:2px; border-radius:5px; font-weight:bold; font-size:16px;">{result}</span>'
-                    
-                    st.markdown(form_html, unsafe_allow_html=True)
-                    st.caption("W = Win | D = Draw | L = Loss (most recent on right)")
-                
-                with col2:
-                    # Form statistics
-                    wins = results_list.count('W')
-                    draws = results_list.count('D')
-                    losses = results_list.count('L')
-                    
-                    st.metric("Wins", wins)
-                    st.metric("Draws", draws)
-                    st.metric("Losses", losses)
-                
-                st.markdown("---")
-                
-                # Points chart
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.markdown("#### Points Per Match")
-                    
-                    # Create points progression
-                    points_list = results_to_points(results_list)
-                    match_numbers = list(range(1, len(points_list) + 1))
-                    
-                    form_df = pd.DataFrame({
-                        'Match': match_numbers,
-                        'Points': points_list,
-                        'Result': results_list
-                    })
-                    
-                    # Create line chart
+                    st.markdown("#### Points per match")
                     fig = px.line(
                         form_df,
-                        x='Match',
-                        y='Points',
+                        x="Match",
+                        y="Points",
                         markers=True,
-                        title=f"Points per match (Last {len(results_list)} matches)",
-                        labels={'Match': 'Match Number', 'Points': 'Points Earned'}
+                        labels={"Match": "Match", "Points": "Points"},
                     )
-                    
-                    fig.update_traces(
-                        marker=dict(size=10),
-                        line=dict(width=3)
-                    )
-                    
+                    fig.update_traces(marker=dict(size=8), line=dict(width=2))
                     fig.update_layout(
+                        height=350,
                         yaxis=dict(range=[-0.5, 3.5], tickvals=[0, 1, 3]),
-                        hovermode='x unified'
+                        hovermode="x unified",
                     )
-                    
                     st.plotly_chart(fig, width='stretch')
-                
+
                 with col2:
-                    st.markdown("#### Win/Draw/Loss Distribution")
-                    
-                    # Create pie chart
-                    wdl_df = pd.DataFrame({
-                        'Result': ['Wins', 'Draws', 'Losses'],
-                        'Count': [wins, draws, losses]
-                    })
-                    
+                    st.markdown("#### Result distribution")
+                    wdl_df = pd.DataFrame(
+                        {"Result": ["Wins", "Draws", "Losses"], "Count": [wins, draws, losses]}
+                    )
                     fig_pie = px.pie(
                         wdl_df,
-                        values='Count',
-                        names='Result',
-                        color='Result',
-                        color_discrete_map={'Wins': '#22c55e', 'Draws': '#eab308', 'Losses': '#ef4444'}
+                        values="Count",
+                        names="Result",
+                        color="Result",
+                        color_discrete_map={
+                            "Wins": "#22c55e",
+                            "Draws": "#eab308",
+                            "Losses": "#ef4444",
+                        },
                     )
-                    
-                    fig_pie.update_traces(textinfo='value+percent')
+                    fig_pie.update_traces(textinfo="value+percent")
+                    fig_pie.update_layout(height=350)
                     st.plotly_chart(fig_pie, width='stretch')
-                
-                # Additional form metrics - use correct column names
-                st.markdown("---")
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    total_points = safe_get(form_data, 'points_last_5', 0)
-                    st.metric("Total Points", int(total_points))
-                
-                with col2:
-                    goals_for = safe_get(form_data, 'goals_for_last_5', 0)
-                    st.metric("Goals Scored", int(goals_for))
-                
-                with col3:
-                    goals_against = safe_get(form_data, 'goals_against_last_5', 0)
-                    st.metric("Goals Conceded", int(goals_against))
-                
-                with col4:
-                    goal_diff = goals_for - goals_against
-                    st.metric("Goal Difference", f"{int(goal_diff):+d}")
-                
+
+                # Additional form metrics in one compact row
+                total_points = safe_get(form_data, "points_last_5", 0)
+                goals_for = safe_get(form_data, "goals_for_last_5", 0)
+                goals_against = safe_get(form_data, "goals_against_last_5", 0)
+                goal_diff = goals_for - goals_against
+
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1:
+                        st.metric("Total points", int(total_points))
+                    with c2:
+                        st.metric("Goals scored", int(goals_for))
+                    with c3:
+                        st.metric("Goals conceded", int(goals_against))
+                    with c4:
+                        st.metric("Goal diff", f"{int(goal_diff):+d}")
             else:
                 st.info("No recent form data available.")
         else:
             st.warning("No form data available for this team.")
-    
     except Exception as e:
         logger.error(f"Error loading form data: {e}")
         st.error(f"Failed to load form data: {e}")
-        st.exception(e)
-
 # ============================================================================
 # ATTACK TAB
 # ============================================================================
