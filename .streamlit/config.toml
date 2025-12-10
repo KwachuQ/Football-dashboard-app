@@ -1,0 +1,29 @@
+[server]
+enableStaticServing = true
+
+[[theme.fontFaces]]
+family = "Arvo"
+url = "app/static/Arvo-Regular.ttf"
+style = "normal"
+weight = 400
+
+[[theme.fontFaces]]
+family = "Arvo"
+url = "app/static/Arvo-Bold.ttf"
+style = "normal"
+weight = 700
+
+[[theme.fontFaces]]
+family = "Arvo"
+url = "app/static/Arvo-Italic.ttf"
+style = "italic"
+weight = 400
+
+[[theme.fontFaces]]
+family = "Arvo"
+url = "app/static/Arvo-Bolditalic.ttf"
+style = "italic"
+weight = 400
+
+[theme]
+font = "Arvo"
