@@ -23,6 +23,13 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] li:first-child {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 # ============================================================================
 # Compact Header with inline date info
 # ============================================================================

@@ -26,6 +26,14 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] li:first-child {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # Helper functions
 @st.cache_data(ttl=3600)
 def load_league_config() -> Dict[str, Any]:
@@ -130,7 +138,32 @@ with col3:
         st.metric("Upcoming Fixtures", "Error")
 
 st.markdown("---")
+st.markdown("---")
 
+# Quick system status
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Database Status")
+    try:
+        from services.db import test_connection
+        if test_connection():
+            st.success("🟢 Connected")
+        else:
+            st.error("🔴 Disconnected")
+    except Exception as e:
+        st.error(f"🔴 Error: {e}")
+
+with col2:
+    st.subheader("Cache Status")
+    try:
+        from services.cache import CacheMonitor
+        monitor = CacheMonitor()
+        stats = monitor.get_stats()
+        hit_rate = stats.get('hit_rate', 0.0)
+        st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
+    except Exception as e:
+        st.warning("Cache monitoring unavailable")
 # # Data Freshness
 # st.header("Data Freshness")
 

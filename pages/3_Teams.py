@@ -50,6 +50,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] li:first-child {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -255,12 +263,12 @@ with st.container(border=True):
 # ============================================================================
 
 overview_tab, form_tab, attack_tab, defense_tab, possession_tab, discipline_tab = st.tabs([
-    "📊 Overview",
-    "📈 Form",
-    "⚔️ Attack",
-    "🛡️ Defense",
-    "🎯 Possession",
-    "⚠️ Discipline"
+    "Overview",
+    "Form",
+    "Attack",
+    "Defense",
+    "Possession",
+    "Discipline"
 ])
 
 # ============================================================================
@@ -276,18 +284,22 @@ with overview_tab:
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Matches", int(safe_get(overview_stats, "matches_played", 0)))
-                    st.metric("Wins", int(safe_get(overview_stats, "wins", 0)))
-                with col2:
-                    st.metric("Draws", int(safe_get(overview_stats, "draws", 0)))
-                    st.metric("Losses", int(safe_get(overview_stats, "losses", 0)))
-                with col3:
                     st.metric("Pts", int(safe_get(overview_stats, "total_points", 0)))
+                    
+                with col2:
+                    st.metric("Wins", int(safe_get(overview_stats, "wins", 0)))
                     st.metric("PPG", format_number(safe_get(overview_stats, "points_per_game"), 2))
-                with col4:
+                    
+                with col3:
+                    st.metric("Draws", int(safe_get(overview_stats, "draws", 0)))
                     wins = safe_get(overview_stats, "wins", 0)
                     matches = safe_get(overview_stats, "matches_played", 1)
                     win_rate = (wins / matches * 100) if matches > 0 else 0
                     st.metric("Win rate", format_percentage(win_rate))
+                    
+                with col4:
+                    st.metric("Losses", int(safe_get(overview_stats, "losses", 0)))
+                    
 
             with st.expander("Goal statistics", expanded=True):
                 col1, col2, col3, col4 = st.columns(4)
@@ -312,7 +324,7 @@ with overview_tab:
 # ============================================================================
 
 with form_tab:
-    st.subheader("Recent form")
+    st.subheader("Recent Form")
 
     try:
         form_data = get_team_form(selected_team_id, last_n_matches=form_window)
@@ -425,7 +437,6 @@ with form_tab:
 # ============================================================================
 
 with attack_tab:
-    st.subheader("Attacking Statistics")
     
     try:
         # Pobierz statystyki dla wszystkich drużyn w lidze
@@ -633,7 +644,6 @@ with attack_tab:
 # ============================================================================
 
 with defense_tab:
-    st.subheader("Defensive Performance")
     
     try:
         # Pobierz statystyki dla wszystkich drużyn w lidze
@@ -840,7 +850,6 @@ with defense_tab:
 # ============================================================================
 
 with possession_tab:
-    st.subheader("Possession & Passing")
     
     try:
         # Pobierz statystyki dla wszystkich drużyn w lidze
@@ -1039,7 +1048,6 @@ with possession_tab:
 # ============================================================================
 
 with discipline_tab:
-    st.subheader("Discipline & Fair Play")
     
     try:
         # Pobierz statystyki dla wszystkich drużyn w lidze
