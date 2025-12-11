@@ -33,7 +33,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Compact global styling
+#Compact global styling
 st.markdown("""
     <style>
     .block-container {
@@ -220,7 +220,7 @@ except Exception as e:
 # TEAM HEADER
 # ============================================================================
 
-st.markdown(f"## {team_name}")
+st.markdown(f" ### {team_name}")
 
 # Quick stats header
 with st.container(border=True):
@@ -235,27 +235,28 @@ with st.container(border=True):
 
     with col2:
         st.metric(
-            "MP",
+            "Matches played",
             int(team_row.get("matches_played", 0)),
         )
 
     with col3:
         st.metric(
-            "Pts",
+            "Points",
             int(team_row.get("total_points", 0)),
         )
 
     with col4:
-        st.metric(
-            "GD",
-            f"{int(team_row.get('goal_difference', 0)):+d}",
-            help="Goals scored minus goals conceded",
+         st.metric(
+            "Points per Game",
+            format_number(team_row.get("points_per_game"), 2),
         )
+        
 
     with col5:
-        st.metric(
-            "PPG",
-            format_number(team_row.get("points_per_game"), 2),
+       st.metric(
+            "Goal Diff",
+            f"{int(team_row.get('goal_difference', 0)):+d}",
+            help="Goals scored minus goals conceded",
         )
 
 # ============================================================================
@@ -277,42 +278,44 @@ overview_tab, form_tab, attack_tab, defense_tab, possession_tab, discipline_tab 
 
 with overview_tab:
     try:
-        overview_stats = get_team_stats(selected_team_id, "overview", selected_season_id)
+        attack_stats = get_team_stats(selected_team_id, "attack", selected_season_id)
+        defense_stats = get_team_stats(selected_team_id, "defense", selected_season_id)
 
-        if overview_stats:
-            with st.expander("Performance metrics", expanded=True):
+        if attack_stats and defense_stats:
+            with st.expander("General stats", expanded=True):
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Matches", int(safe_get(overview_stats, "matches_played", 0)))
-                    st.metric("Pts", int(safe_get(overview_stats, "total_points", 0)))
-                    
+                    st.metric("Goals for", int(safe_get(attack_stats, "total_goals", 0)))
+                    st.metric("Total xG", float(safe_get(attack_stats, "total_xg", 0)))
+                    st.metric("xG Diff", float(safe_get(attack_stats, "xg_difference", 0)))
+                
                 with col2:
-                    st.metric("Wins", int(safe_get(overview_stats, "wins", 0)))
-                    st.metric("PPG", format_number(safe_get(overview_stats, "points_per_game"), 2))
+                    
+                    st.metric("Goals against", int(safe_get(defense_stats , "total_goals_conceded", 0)))
+                    st.metric("Total xGA", format_number(safe_get(defense_stats , "total_xga", 0)))
+                    st.metric("xGA Diff", format_number(safe_get(defense_stats , "xga_difference", 0)))
                     
                 with col3:
-                    st.metric("Draws", int(safe_get(overview_stats, "draws", 0)))
-                    wins = safe_get(overview_stats, "wins", 0)
-                    matches = safe_get(overview_stats, "matches_played", 1)
-                    win_rate = (wins / matches * 100) if matches > 0 else 0
-                    st.metric("Win rate", format_percentage(win_rate))
                     
-                with col4:
-                    st.metric("Losses", int(safe_get(overview_stats, "losses", 0)))
+                    st.metric("Clean Sheets", int(safe_get(defense_stats , "clean_sheets", 0)))
+                    st.metric("Clean Sheets %", format_percentage(safe_get(defense_stats , "clean_sheet_pct", 0)))
                     
+        btts_stats = get_team_stats(selected_team_id, "btts", selected_season_id)
 
-            with st.expander("Goal statistics", expanded=True):
+        if btts_stats:
+            with st.expander("BTTS Statistics", expanded=True):
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Goals for", int(safe_get(overview_stats, "goals_for", 0)))
+                    st.metric("AVG Goals per Match", float(safe_get(btts_stats, "overall_avg_goals_per_match", 0)))
+                    st.metric("BTTS %", format_percentage(safe_get(btts_stats, "overall_btts_pct", 0)))
+                    
                 with col2:
-                    st.metric("Goals against", int(safe_get(overview_stats, "goals_against", 0)))
+                    st.metric("AVG Goals For", float(safe_get(btts_stats, "overall_avg_scored", 0)))
+                    st.metric("AVG xG per Match", float(safe_get(btts_stats, "overall_avg_xg", 0)))
                 with col3:
-                    goal_diff = safe_get(overview_stats, "goal_difference", 0)
-                    st.metric("Goal diff", f"{int(goal_diff):+d}")
-                with col4:
-                    clean_sheets = safe_get(overview_stats, "clean_sheets", 0)
-                    st.metric("Clean sheets", int(clean_sheets))
+                    st.metric("AVG Goals Against", float(safe_get(btts_stats, "overall_avg_conceded", 0)))
+                    st.metric("AVG xGA per Match", float(safe_get(btts_stats, "overall_avg_xga", 0)))
+           
         else:
             st.warning("No overview statistics available for this team.")
     except Exception as e:

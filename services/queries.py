@@ -209,6 +209,7 @@ def get_team_stats(
             'possession': TeamPossession,
             'discipline': TeamDiscipline,
             'overview': TeamOverview,
+            'btts': TeamBttsAnalysis,
         }
         
         if stat_type not in model_map:
