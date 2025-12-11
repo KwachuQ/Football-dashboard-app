@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import Optional, Dict, Any
 import logging
+import math
 
 
 # Import existing components and services
@@ -516,7 +517,7 @@ with attack_tab:
                         fill='toself',
                         name='League Average',
                         line_color='#9ca3af',
-                        opacity=0.5,
+                        opacity=0.4,
                         hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
                         customdata=[f"{v:.2f}" for v in league_values]
                     ))
@@ -529,13 +530,30 @@ with attack_tab:
                                 showticklabels=False
                             )
                         ),
-                        showlegend=True,
+                        showlegend=False,
                         height=500
                     )
-                    
+
                     st.plotly_chart(fig, width='stretch')
-                    
-                    # Legenda ze skalami
+
+                    # Legend
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #3b82f6; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>{team_name}</span>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>League Average</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.write("")
+                    st.write("")
+
+                    # Scales info
                     st.caption("**Scales for each metric:**")
                     scale_text = " | ".join([
                         f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
@@ -729,12 +747,29 @@ with defense_tab:
                                 showticklabels=False
                             )
                         ),
-                        showlegend=True,
+                        showlegend=False,
                         height=500
                     )
                     
                     st.plotly_chart(fig, width='stretch')
-                    
+
+                    # Legend
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #ef4444; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>{team_name}</span>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>League Average</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.write("")
+                    st.write("")
+
                     st.caption("**Scales for each metric:**")
                     scale_text = " | ".join([
                         f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
@@ -935,12 +970,29 @@ with possession_tab:
                                 showticklabels=False
                             )
                         ),
-                        showlegend=True,
+                        showlegend=False,
                         height=500
                     )
                     
                     st.plotly_chart(fig, width='stretch')
-                    
+
+                    # Legend
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #8b5cf6; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>{team_name}</span>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>League Average</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.write("")
+                    st.write("")
+
                     st.caption("**Scales for each metric:**")
                     scale_text = " | ".join([
                         f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
@@ -1140,11 +1192,27 @@ with discipline_tab:
                                 showticklabels=False
                             )
                         ),
-                        showlegend=True,
+                        showlegend=False,
                         height=500
                     )
                     
                     st.plotly_chart(fig, width='stretch')
+                       # Legend
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #f59e0b; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>{team_name}</span>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <span>League Average</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.write("")
+                    st.write("")
                     
                     st.caption("**Scales for each metric (lower values = better discipline):**")
                     scale_text = " | ".join([
