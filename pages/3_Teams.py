@@ -144,15 +144,6 @@ with st.sidebar:
         st.error("Failed to load seasons")
         st.stop()
     
-    # Time period selector
-    form_window = st.select_slider(
-        "Form window (matches)",
-        options=[5, 10, 15, 20],
-        value=5,
-        key="teams_form_window",
-        help="Number of recent matches to analyze",
-    )
-    
     # Home/Away toggle
     location = home_away_toggle(
         label="Filter by location",
@@ -329,15 +320,24 @@ with overview_tab:
 with form_tab:
     st.subheader("Recent Form")
 
+    # Time period selector
+    form_window = st.select_slider(
+        "Form window (matches)",
+        options=[5, 10, 15, 20],
+        value=5,
+        key="teams_form_window",
+        help="Number of recent matches to analyze",
+    )
     try:
         form_data = get_team_form(selected_team_id, last_n_matches=form_window)
 
         if form_data:
-            form_string = safe_get(form_data, "last_5_results", "")
+            # Use dynamic key 'last_results' instead of hardcoded "last_5_results"
+            form_string = safe_get(form_data, "last_results", "")
             results_list = parse_form_results(form_string, form_window)
 
             if results_list:
-                # Visual form indicator
+                # Visual form indicator (unchanged)
                 colors = {"W": "#22c55e", "D": "#eab308", "L": "#ef4444"}
                 form_html = ""
                 for result in results_list:
@@ -356,7 +356,7 @@ with form_tab:
                 draws = results_list.count("D")
                 losses = results_list.count("L")
 
-                # Compact metrics row
+                # Compact metrics row (unchanged)
                 with st.container(border=True):
                     m1, m2, m3 = st.columns(3)
                     with m1:
@@ -366,7 +366,7 @@ with form_tab:
                     with m3:
                         st.metric("Losses", losses)
 
-                # Charts section – tighter columns, lower height
+                # Charts section (unchanged)
                 col1, col2 = st.columns([2, 1])
 
                 points_list = results_to_points(results_list)
@@ -412,10 +412,10 @@ with form_tab:
                     fig_pie.update_layout(height=350)
                     st.plotly_chart(fig_pie, width='stretch')
 
-                # Additional form metrics in one compact row
-                total_points = safe_get(form_data, "points_last_5", 0)
-                goals_for = safe_get(form_data, "goals_for_last_5", 0)
-                goals_against = safe_get(form_data, "goals_against_last_5", 0)
+                # Additional form metrics in one compact row (updated to use dynamic keys)
+                total_points = safe_get(form_data, "points_last", 0)
+                goals_for = safe_get(form_data, "goals_for_last", 0)
+                goals_against = safe_get(form_data, "goals_against_last", 0)
                 goal_diff = goals_for - goals_against
 
                 with st.container(border=True):

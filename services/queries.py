@@ -132,22 +132,28 @@ def get_upcoming_fixtures(
         db.close()
 
 
+# filepath: c:\Users\lkwas\Desktop\Data_engineering\Football-dashboard-app\services\queries.py
 def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     """
-    Get team form statistics.
+    Get team form statistics for the specified number of recent matches.
     
     Args:
         team_id: Team ID
-        last_n_matches: Number of recent matches (not used in current implementation)
-        
+        last_n_matches: Number of recent matches (5, 10, 15, or 20)
+    
     Returns:
-        Dictionary with form data
+        Dictionary with form data for the selected window
     """
     from sqlalchemy import select, and_, func
     from src.models.team_form import TeamForm
     
     # Convert numpy types to Python int to avoid psycopg2 adapter errors
     team_id = int(team_id)
+    last_n_matches = int(last_n_matches)
+    
+    # Map last_n_matches to column suffix (default to 5 if unsupported)
+    supported_windows = {5: '5', 10: '10', 15: '15', 20: '20'}
+    suffix = supported_windows.get(last_n_matches, '5')
     
     db = next(get_db())
     try:
@@ -171,13 +177,14 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
                 'team_name': result.team_name,
                 'season_id': result.season_id,
                 'season_name': result.season_name,
-                'last_5_results': result.last_5_results,
-                'points_last_5': result.points_last_5,
-                'wins_last_5': result.wins_last_5,
-                'draws_last_5': result.draws_last_5,
-                'losses_last_5': result.losses_last_5,
-                'goals_for_last_5': result.goals_for_last_5,
-                'goals_against_last_5': result.goals_against_last_5,
+                # Dynamic keys based on suffix
+                'last_results': getattr(result, f'last_{suffix}_results', ''),
+                'points_last': getattr(result, f'points_last_{suffix}', 0),
+                'wins_last': getattr(result, f'wins_last_{suffix}', 0),
+                'draws_last': getattr(result, f'draws_last_{suffix}', 0),
+                'losses_last': getattr(result, f'losses_last_{suffix}', 0),
+                'goals_for_last': getattr(result, f'goals_for_last_{suffix}', 0),
+                'goals_against_last': getattr(result, f'goals_against_last_{suffix}', 0),
             }
         
         return {}
