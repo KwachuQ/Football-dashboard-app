@@ -10,6 +10,9 @@ import plotly.graph_objects as go
 from typing import Optional, Dict, Any
 import logging
 import math
+import matplotlib.pyplot as plt
+from mplsoccer import Radar
+from matplotlib import font_manager
 
 
 # Import existing components and services
@@ -469,98 +472,142 @@ with attack_tab:
                     team_stats
                 )
                 
-                col1, col2 = st.columns([3, 2])
+                # ADJUSTED: Closer columns [1.2, 1] instead of [2, 1]
+                col1, col2 = st.columns([1.2, 1])
                 
                 with col1:
                     st.markdown("### Attack Radar")
                     
-                    # Definicja metryk
+                    # Import mplsoccer
+                    from mplsoccer import Radar
+                    import matplotlib.pyplot as plt
+                    import numpy as np
+                    import warnings
+                    
+                    # Definicja metryk - REPLACED corners with touches_in_box
                     metric_config = [
                         ('goals_per_game', 'Goals/Game'),
                         ('xg_per_game', 'xG/Game'),
+                        ('shots_per_game', 'Shots/Game'),
                         ('shots_on_target_per_game', 'Shots on Target/Game'),
                         ('big_chances_created_per_game', 'Big Chances/Game'),
-                        ('shots_per_game', 'Shots/Game'),
-                        ('corners_per_game', 'Corners/Game')
+                        ('touches_in_box_per_game', 'Touches In Box/Game'),
                     ]
                     
                     metrics = [m[0] for m in metric_config]
                     labels = [m[1] for m in metric_config]
                     
-                    # Oblicz skale
-                    scales = calculate_radar_scales(all_teams_df, metrics, padding_pct=0.15)
-                    
-                    # Pobierz wartości
+                    # Get actual values
                     team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
                     league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
                     
-                    # Normalizuj
-                    team_normalized = normalize_for_radar(team_values, scales, metrics)
-                    league_normalized = normalize_for_radar(league_values, scales, metrics)
+                    # Calculate min/max boundaries for radar (0 to 95th percentile)
+                    low = []
+                    high = []
+                    for metric in metrics:
+                        metric_values = all_teams_df[metric].dropna()
+                        low.append(0)  # Always start from 0
+                        # FIX: Add small epsilon to avoid division by zero
+                        high_val = float(metric_values.quantile(0.95))
+                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
                     
-                    # Stwórz radar
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=team_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name=team_name,
-                        line_color='#3b82f6',
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in team_values]
-                    ))
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=league_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name='League Average',
-                        line_color='#9ca3af',
-                        opacity=0.4,
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in league_values]
-                    ))
-                    
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 1],
-                                showticklabels=False
-                            )
-                        ),
-                        showlegend=False,
-                        height=500
+                    # Initialize Radar
+                    radar = Radar(
+                        params=labels,
+                        min_range=low,
+                        max_range=high,
+                        num_rings=4,  # 4 concentric circles
+                        ring_width=1,
+                        center_circle_radius=0  # No central circle
                     )
-
-                    st.plotly_chart(fig, width='stretch')
-
-                    # Legend
+                    
+                    # Create figure - 40% LARGER (5.23x5.23 instead of 3.74x3.74) with HIGH DPI
+                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
+                    
+                    # Setup radar axis
+                    radar.setup_axis(ax=ax, facecolor='white')
+                    
+                    # Suppress matplotlib warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=RuntimeWarning)
+                        
+                        # Draw concentric circles (baseline rings) - proportionally adjusted
+                        rings_inner = radar.draw_circles(
+                            ax=ax, 
+                            facecolor='#f3f4f6',  # Light gray
+                            edgecolor='#d1d5db',  # Medium gray border
+                            lw=1.8,
+                            alpha=0.4
+                        )
+                        
+                        # DRAW LEAGUE AVERAGE FIRST (as background/baseline) - NO MARKERS
+                        league_output = radar.draw_radar_compare(
+                            league_values,
+                            team_values,
+                            ax=ax,
+                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
+                            kwargs_compare={'facecolor': '#fbbf24', 'alpha': 0.5, 'edgecolor': '#f59e0b', 'linewidth': 3.6}
+                        )
+                    
+                    # Get vertices for markers
+                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
+                    
+                    # Calculate percentiles for team performance
+                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
+                    
+                    # Add VERY SMALL markers for TEAM only
+                    for vertex, pct in zip(vertices2, team_percentiles):
+                        # Yellow for strong (>60th), darker gold for moderate
+                        color = '#fbbf24' if pct >= 60 else '#f59e0b'
+                        ax.scatter(
+                            vertex[0], vertex[1],
+                            c=color,
+                            s=35,  # Very small markers
+                            edgecolors='white',
+                            linewidths=1.5,
+                            zorder=5,
+                            marker='o'
+                        )
+                    
+                    # Draw range labels (scale values) - proportionally adjusted
+                    range_labels = radar.draw_range_labels(
+                        ax=ax,
+                        fontsize=6,
+                        color='#64748b',
+                        fontweight='normal'
+                    )
+                    
+                    # Draw parameter labels (metric names) - proportionally adjusted
+                    param_labels = radar.draw_param_labels(
+                        ax=ax,
+                        fontsize=9.5,
+                        color='#0f172a',
+                        fontweight='bold'
+                    )
+                    
+                    plt.tight_layout(pad=0.65)
+                    
+                    # CENTER THE RADAR: Use container columns to center
+                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                    with radar_col2:
+                        st.pyplot(fig, width='content')
+                    
+                    plt.close()
+                    
+                    # Performance legend - centered
                     st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #3b82f6; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #fbbf24; margin-right: 5px; border-radius: 2px;"></div>
                             <span>{team_name}</span>
                         </div>
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
                             <span>League Average</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
 
-                    st.write("")
-                    st.write("")
-
-                    # Scales info
-                    st.caption("**Scales for each metric:**")
-                    scale_text = " | ".join([
-                        f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
-                        for i in range(len(metrics))
-                    ])
-                    st.caption(scale_text)
-                
                 with col2:
                     st.markdown("### Attack Statistics")
                     
@@ -649,7 +696,7 @@ with attack_tab:
                         return colors
                     
                     styled_df = attack_df.style.apply(highlight_percentile, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=425,hide_index=True)
+                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
                     
                     st.caption("💡 **Pct** = Percentile (% teams with worse stats)")
         else:
@@ -659,6 +706,8 @@ with attack_tab:
         logger.error(f"Error loading attack stats: {e}")
         st.error(f"Failed to load attack statistics: {e}")
         st.exception(e)
+
+
 
 # ============================================================================
 # DEFENSE TAB
