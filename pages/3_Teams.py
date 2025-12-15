@@ -18,7 +18,7 @@ import warnings
 
 # Import existing components and services
 from components.filters import team_selector, home_away_toggle, get_active_league_from_config
-from services.queries import get_all_seasons, get_league_standings, get_team_form, get_team_stats
+from services.queries import get_all_seasons, get_league_standings, get_team_form, get_all_team_stats, get_league_averages, get_team_stats
 from services.transforms import (
     calculate_win_rate, 
     calculate_form_sequence,
@@ -109,7 +109,327 @@ def prepare_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """
     return df.astype(str)
 
+def draw_team_radar(
+    team_stats: dict,
+    all_teams_df: pd.DataFrame,
+    percentiles: dict,
+    league_avg: dict,
+    team_name: str,
+    metric_config: list,
+    radar_color: str = '#fbbf24',
+    radar_edge_color: str = '#f59e0b'
+):
+    """
+    Draw a mplsoccer radar chart for team performance.
+    
+    Args:
+        team_stats: Dictionary of team statistics
+        all_teams_df: DataFrame with all teams' stats for the league
+        percentiles: Dictionary of percentile rankings
+        league_avg: Dictionary of league averages
+        team_name: Name of the team
+        metric_config: List of tuples (metric_key, display_label)
+        radar_color: Fill color for team radar (default: gold)
+        radar_edge_color: Edge color for team radar (default: orange)
+    
+    Returns:
+        matplotlib figure object
+    """
+    metrics = [m[0] for m in metric_config]
+    labels = [m[1] for m in metric_config]
+    
+    # Get actual values
+    team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
+    league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
+    
+    # Calculate min/max boundaries for radar (0 to 95th percentile)
+    low = []
+    high = []
+    for metric in metrics:
+        metric_values = all_teams_df[metric].dropna()
+        low.append(0) 
+        high_val = float(metric_values.quantile(0.95))
+        high.append(max(high_val, 0.01))  # Prevent division by zero
+    
+    # Initialize Radar
+    radar = Radar(
+        params=labels,
+        min_range=low,
+        max_range=high,
+        num_rings=4, 
+        ring_width=1,
+        center_circle_radius=0
+    )
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
+    
+    # Setup radar axis
+    radar.setup_axis(ax=ax, facecolor='white')
+    
+    # Suppress matplotlib warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning)
+        
+        # Draw concentric circles (baseline rings)
+        rings_inner = radar.draw_circles(
+            ax=ax, 
+            facecolor='#f3f4f6',  # Light gray
+            edgecolor='#d1d5db',  # Medium gray border
+            lw=1.8,
+            alpha=0.4
+        )
+        
+        # League Average (background) and Team Performance (foreground)
+        league_output = radar.draw_radar_compare(
+            league_values,
+            team_values,
+            ax=ax,
+            kwargs_radar={
+                'facecolor': '#9ca3af', 
+                'alpha': 0.25, 
+                'edgecolor': '#6b7280', 
+                'linewidth': 2.4
+            },
+            kwargs_compare={
+                'facecolor': radar_color, 
+                'alpha': 0.5, 
+                'edgecolor': radar_edge_color, 
+                'linewidth': 3.6
+            }
+        )
+    
+    # Get vertices for markers
+    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
+    
+    # Calculate percentiles for team performance
+    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
+    
+    # Add markers for team radar
+    for vertex, pct in zip(vertices2, team_percentiles):
+        # Use lighter shade if above 60th percentile
+        color = radar_color if pct >= 60 else radar_edge_color
+        ax.scatter(
+            vertex[0], vertex[1],
+            c=color,
+            s=35,
+            edgecolors='white',
+            linewidths=1.5,
+            zorder=5,
+            marker='o'
+        )
+    
+    # Draw range labels (scale values)
+    range_labels = radar.draw_range_labels(
+        ax=ax,
+        fontsize=6,
+        color="#8b6469",
+        fontweight='normal'
+    )
+    
+    # Draw parameter labels (metric names)
+    param_labels = radar.draw_param_labels(
+        ax=ax,
+        fontsize=9.5,
+        color='#0f172a',
+        fontweight='bold'
+    )
+    
+    plt.tight_layout(pad=0.65)
+    
+    return fig
 
+def create_stats_table(metrics_config, team_stats, league_avg, percentiles, inverted_metrics=None):
+    """
+    Create a statistics table DataFrame.
+    
+    Args:
+        metrics_config: List of tuples (metric_key, display_name, decimals)
+        team_stats: Dictionary of team statistics
+        league_avg: Dictionary of league averages
+        percentiles: Dictionary of percentile values
+        inverted_metrics: List of metric keys where lower is better
+    
+    Returns:
+        Prepared DataFrame ready for display
+    """
+    inverted_metrics = inverted_metrics or []
+    
+    # Create mapping from metric_key to display_name
+    inverted_names = [
+        name for key, name, _ in metrics_config if key in inverted_metrics
+    ]
+    
+    data = {
+        'Metric': [name for _, name, _ in metrics_config],
+        'Team': [
+            format_number(safe_get(team_stats, key), decimals) 
+            if not key.endswith('_pct') 
+            else format_percentage(safe_get(team_stats, key))
+            for key, _, decimals in metrics_config
+        ],
+        'League': [
+            format_number(safe_get(league_avg, key), decimals) 
+            if not key.endswith('_pct') 
+            else format_percentage(safe_get(league_avg, key))
+            for key, _, decimals in metrics_config
+        ],
+        'Percentile': [
+            f"{int(100 - percentiles.get(key, 100)) if key in inverted_metrics else int(percentiles.get(key, 0))}%" 
+            if percentiles.get(key) is not None else '-'
+            for key, _, _ in metrics_config
+        ]
+    }
+    
+    df = pd.DataFrame(data)
+    df_prepared = prepare_dataframe_for_display(df)
+    
+    # Store inverted metric names as attribute for styling
+    df_prepared.attrs['inverted_names'] = inverted_names
+    
+    return df_prepared
+
+def style_table(row, inverted_metrics=None):
+    """
+    Style table rows with color coding.
+    
+    Args:
+        row: DataFrame row
+        inverted_metrics: List of metric names where lower is better
+    
+    Returns:
+        List of style strings for each column
+    """
+    inverted_metrics = inverted_metrics or []
+    colors = [''] * len(row)
+    
+    metric_name = row['Metric']
+    is_inverted = metric_name in inverted_metrics
+    
+    # Compare Team vs League and apply color + bold to Team column (index 1)
+    try:
+        team_val_str = row['Team']
+        league_val_str = row['League']
+        
+        # Remove any formatting and convert to float for comparison
+        team_val = float(team_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+        league_val = float(league_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+        
+        # For inverted metrics, reverse the color logic
+        if is_inverted:
+            if team_val < league_val:  # Lower is better
+                colors[1] = 'color: #178800; font-weight: bold'  # Green
+            elif team_val > league_val:  # Higher is worse
+                colors[1] = 'color: #d3001c; font-weight: bold'  # Red
+            else:
+                colors[1] = 'font-weight: bold'
+        else:
+            if team_val > league_val:  # Higher is better
+                colors[1] = 'color: #178800; font-weight: bold'  # Green
+            elif team_val < league_val:  # Lower is worse
+                colors[1] = 'color: #d3001c; font-weight: bold'  # Red
+            else:
+                colors[1] = 'font-weight: bold'
+    except:
+        colors[1] = 'font-weight: bold'
+    
+    # Color code the Percentile column (index -1)
+    pct_str = row['Percentile']
+    if pct_str != '-':
+        try:
+            pct_val = int(pct_str.replace('%', ''))
+            
+            if pct_val >= 75:
+                colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
+            elif pct_val >= 50:
+                colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
+            elif pct_val >= 25:
+                colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+            else:
+                colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+        except:
+            pass
+    
+    return colors
+
+def map_league_averages(league_averages: Dict[str, Any], stat_type: str) -> Dict[str, float]:
+    """
+    Map league averages columns (with avg_ prefix) to team stat columns.
+    
+    Args:
+        league_averages: Dictionary with league-wide averages (from mart_league_averages)
+        stat_type: One of 'attack', 'defense', 'possession', 'discipline'
+    
+    Returns:
+        Dictionary with mapped column names matching team stats
+    """
+    if not league_averages:
+        return {}
+    
+    # Define mappings for each stat type
+    mappings = {
+        'attack': {
+            'goals_per_game': 'avg_goals_per_game_per_team',
+            'xg_per_game': 'avg_xg_per_game',
+            'xg_difference': 'avg_xg_difference',
+            'xg_diff_per_game': 'avg_xg_diff_per_game',
+            'big_chances_created_per_game': 'avg_big_chances_created_per_game',
+            'big_chances_missed_per_game': 'avg_big_chances_missed_per_game',
+            'big_chances_scored_per_game': 'avg_big_chances_scored_per_game',
+            'shots_per_game': 'avg_shots_per_game',
+            'shots_on_target_per_game': 'avg_shots_on_target_per_game',
+            'shots_off_target_per_game': 'avg_shots_off_target_per_game',
+            'blocked_shots_per_game': 'avg_blocked_shots_per_game',
+            'shots_inside_box_per_game': 'avg_shots_inside_box_per_game',
+            'shots_outside_box_per_game': 'avg_shots_outside_box_per_game',
+            'corners_per_game': 'avg_corners_per_game',
+            'touches_in_box_per_game': 'avg_touches_in_box_per_game',
+        },
+        'defense': {
+            'goals_conceded_per_game': 'avg_goals_conceded_per_game',
+            'xga_per_game': 'avg_xga_per_game',
+            'xga_difference': 'avg_xga_difference',
+            'xga_difference_per_game': 'avg_xga_difference_per_game',
+            'clean_sheet_pct': 'avg_clean_sheet_pct',
+            'saves_per_game': 'avg_saves_per_game',
+            'tackles_per_game': 'avg_tackles_per_game',
+            'avg_tackles_won_pct': 'avg_tackles_won_pct',
+            'interceptions_per_game': 'avg_interceptions_per_game',
+            'clearances_per_game': 'avg_clearances_per_game',
+            'blocked_shots_per_game': 'avg_blocked_shots_per_game_def',
+            'ball_recoveries_per_game': 'avg_ball_recoveries_per_game',
+            'avg_aerial_duels_pct': 'avg_aerial_duels_pct',
+            'avg_ground_duels_pct': 'avg_ground_duels_pct',
+            'avg_duels_won_pct': 'avg_duels_won_pct',
+        },
+        'possession': {
+            'avg_possession_pct': 'avg_possession_pct',
+            'pass_accuracy_pct': 'avg_pass_accuracy_pct',
+            'accurate_passes_per_game': 'avg_accurate_passes_per_game',
+            'total_passes_per_game': 'avg_total_passes_per_game',
+            'accurate_long_balls_per_game': 'avg_accurate_long_balls_per_game',
+            'accurate_crosses_per_game': 'avg_accurate_crosses_per_game',
+            'final_third_entries_per_game': 'avg_final_third_entries_per_game',
+            'touches_in_box_per_game': 'avg_touches_in_box_per_game_poss',
+            'dispossessed_per_game': 'avg_dispossessed_per_game',
+        },
+        'discipline': {
+            'yellow_cards_per_game': 'avg_yellow_cards_per_game',
+            'fouls_per_game': 'avg_fouls_per_game',
+            'offsides_per_game': 'avg_offsides_per_game',
+            'free_kicks_per_game': 'avg_free_kicks_per_game',
+        }
+    }
+    
+    mapping = mappings.get(stat_type, {})
+    
+    # Map the values
+    mapped_averages = {}
+    for team_col, league_col in mapping.items():
+        if league_col in league_averages and league_averages[league_col] is not None:
+            mapped_averages[team_col] = float(league_averages[league_col])
+    
+    return mapped_averages
 # ============================================================================
 # MAIN PAGE
 # ============================================================================
@@ -256,6 +576,39 @@ with st.container(border=True):
         )
 
 # ============================================================================
+# LOAD ALL TEAM STATS
+# ============================================================================
+
+# Initialize all variables to prevent "possibly unbound" errors
+attack_stats = defense_stats = possession_stats = discipline_stats = overview_stats = btts_stats = {}
+all_teams_attack = all_teams_defense = all_teams_possession = all_teams_discipline = pd.DataFrame()
+league_averages = {}
+
+try:
+    # Get selected team's stats in ONE database call
+    all_stats = get_all_team_stats(selected_team_id, selected_season_id)
+    
+    attack_stats = all_stats.get('attack', {})
+    defense_stats = all_stats.get('defense', {})
+    possession_stats = all_stats.get('possession', {})
+    discipline_stats = all_stats.get('discipline', {})
+    overview_stats = all_stats.get('overview', {})
+    btts_stats = all_stats.get('btts', {})
+    
+    # Get league averages
+    league_averages = get_league_averages(selected_season_id)
+    
+    # Get ALL teams' data for percentile calculations (4 calls total for all tabs)
+    all_teams_attack = get_team_stats('attack', season_id=selected_season_id, team_id=None)
+    all_teams_defense = get_team_stats('defense', season_id=selected_season_id, team_id=None)
+    all_teams_possession = get_team_stats('possession', season_id=selected_season_id, team_id=None)
+    all_teams_discipline = get_team_stats('discipline', season_id=selected_season_id, team_id=None)
+
+except Exception as e:
+    logger.error(f"Error loading team stats: {e}")
+    st.error(f"Failed to load team statistics: {e}")
+
+# ============================================================================
 # TABS LAYOUT
 # ============================================================================
 
@@ -274,9 +627,6 @@ overview_tab, form_tab, attack_tab, defense_tab, possession_tab, discipline_tab 
 
 with overview_tab:
     try:
-        attack_stats = get_team_stats(selected_team_id, "attack", selected_season_id)
-        defense_stats = get_team_stats(selected_team_id, "defense", selected_season_id)
-
         if attack_stats and defense_stats:
             with st.expander("General stats", expanded=True):
                 col1, col2, col3, col4 = st.columns(4)
@@ -286,18 +636,14 @@ with overview_tab:
                     st.metric("xG Diff", float(safe_get(attack_stats, "xg_difference", 0)))
                 
                 with col2:
-                    
-                    st.metric("Goals against", int(safe_get(defense_stats , "total_goals_conceded", 0)))
-                    st.metric("Total xGA", format_number(safe_get(defense_stats , "total_xga", 0)))
-                    st.metric("xGA Diff", format_number(safe_get(defense_stats , "xga_difference", 0)))
+                    st.metric("Goals against", int(safe_get(defense_stats, "total_goals_conceded", 0)))
+                    st.metric("Total xGA", format_number(safe_get(defense_stats, "total_xga", 0)))
+                    st.metric("xGA Diff", format_number(safe_get(defense_stats, "xga_difference", 0)))
                     
                 with col3:
+                    st.metric("Clean Sheets", int(safe_get(defense_stats, "clean_sheets", 0)))
+                    st.metric("Clean Sheets %", format_percentage(safe_get(defense_stats, "clean_sheet_pct", 0)))
                     
-                    st.metric("Clean Sheets", int(safe_get(defense_stats , "clean_sheets", 0)))
-                    st.metric("Clean Sheets %", format_percentage(safe_get(defense_stats , "clean_sheet_pct", 0)))
-                    
-        btts_stats = get_team_stats(selected_team_id, "btts", selected_season_id)
-
         if btts_stats:
             with st.expander("BTTS Statistics", expanded=True):
                 col1, col2, col3, col4 = st.columns(4)
@@ -440,601 +786,211 @@ with form_tab:
     except Exception as e:
         logger.error(f"Error loading form data: {e}")
         st.error(f"Failed to load form data: {e}")
+
 # ============================================================================
 # ATTACK TAB
 # ============================================================================
 
 with attack_tab:
-    
     try:
-        # Get stats for all teams in the league
-        engine = get_engine()
-        query = f"""
-            SELECT * 
-            FROM gold.mart_team_attack
-            WHERE season_id = {selected_season_id}
-        """
-        
-        with engine.connect() as conn:
-            all_teams_df = pd.read_sql(query, conn)
-        
-        if not all_teams_df.empty:
-            # Stats for selected team
-            team_stats_row = all_teams_df[all_teams_df['team_id'] == selected_team_id]
-            
-            if team_stats_row.empty:
-                st.warning("No attack statistics available for this team.")
-            else:
-                team_stats = team_stats_row.iloc[0].to_dict()
+        if isinstance(all_teams_attack, pd.DataFrame) and not all_teams_attack.empty and attack_stats:
+            # Calculate percentiles using pre-loaded data
+            league_avg_attack, percentiles = calculate_league_stats_and_percentiles(
+                all_teams_attack, 
+                attack_stats,       
+                None     
+            )
+
+            # Override with actual league averages using mapped column names
+            mapped_league_avg = map_league_averages(league_averages, 'attack')
+            league_avg_attack.update(mapped_league_avg)
                 
-                # Calculate league averages and percentiles
-                league_avg, percentiles = calculate_league_stats_and_percentiles(
-                    all_teams_df, 
-                    team_stats
+            # Layout with radar and stats table
+            col1, col2 = st.columns([1.2, 1])
+                
+            with col1:
+                st.markdown("### Attack Radar")
+                    
+                # Metric configuration
+                attack_radar_metrics = [
+                    ('goals_per_game', 'Goals/Game'),
+                    ('xg_per_game', 'xG/Game'),
+                    ('shots_per_game', 'Shots/Game'),
+                    ('shots_on_target_per_game', 'Shots on Target/Game'),
+                    ('big_chances_created_per_game', 'Big Chances/Game'),
+                    ('touches_in_box_per_game', 'Touches In Box/Game'),
+                ]
+                
+                # Draw radar using reusable function
+                fig = draw_team_radar(
+                    team_stats=attack_stats,           # Selected team's stats
+                    all_teams_df=all_teams_attack,     # ALL teams for percentile calculation
+                    percentiles=percentiles,            # Calculated percentiles
+                    league_avg=league_avg_attack,      # League averages
+                    team_name=team_name,
+                    metric_config=attack_radar_metrics,
+                    radar_color='#fbbf24',  # Gold
+                    radar_edge_color='#f59e0b'  # Orange
                 )
                 
-                # Layout with radar and stats table
-                col1, col2 = st.columns([1.2, 1])
+                # Display radar
+                radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                with radar_col2:
+                    st.pyplot(fig, width='stretch')
+                plt.close()
                 
-                with col1:
-                    st.markdown("### Attack Radar")
-            
-                    # Metric configuration
-                    metric_config = [
-                        ('goals_per_game', 'Goals/Game'),
-                        ('xg_per_game', 'xG/Game'),
-                        ('shots_per_game', 'Shots/Game'),
-                        ('shots_on_target_per_game', 'Shots on Target/Game'),
-                        ('big_chances_created_per_game', 'Big Chances/Game'),
-                        ('touches_in_box_per_game', 'Touches In Box/Game'),
-                    ]
-                    
-                    metrics = [m[0] for m in metric_config]
-                    labels = [m[1] for m in metric_config]
-                    
-                    # Get actual values
-                    team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
-                    league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
-                    
-                    # Calculate min/max boundaries for radar (0 to 95th percentile)
-                    low = []
-                    high = []
-                    for metric in metrics:
-                        metric_values = all_teams_df[metric].dropna()
-                        low.append(0) 
-                        high_val = float(metric_values.quantile(0.95))
-                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
-                    
-                    # Initialize Radar
-                    radar = Radar(
-                        params=labels,
-                        min_range=low,
-                        max_range=high,
-                        num_rings=4, 
-                        ring_width=1,
-                        center_circle_radius=0
-                    )
-                    
-                    # Create figure
-                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
-                    
-                    # Setup radar axis
-                    radar.setup_axis(ax=ax, facecolor='white')
-                    
-                    # Suppress matplotlib warnings
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings('ignore', category=RuntimeWarning)
-                        
-                        # Draw concentric circles (baseline rings) - proportionally adjusted
-                        rings_inner = radar.draw_circles(
-                            ax=ax, 
-                            facecolor='#f3f4f6',  # Light gray
-                            edgecolor='#d1d5db',  # Medium gray border
-                            lw=1.8,
-                            alpha=0.4
-                        )
-                        
-                        # League Average (as background/baseline)
-                        league_output = radar.draw_radar_compare(
-                            league_values,
-                            team_values,
-                            ax=ax,
-                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
-                            kwargs_compare={'facecolor': '#fbbf24', 'alpha': 0.5, 'edgecolor': '#f59e0b', 'linewidth': 3.6}
-                        )
-                    
-                    # Get vertices for markers
-                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
-                    
-                    # Calculate percentiles for team performance
-                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
-                    
-                    # Markers for team radar
-                    for vertex, pct in zip(vertices2, team_percentiles):
-                        color = '#fbbf24' if pct >= 60 else '#f59e0b'
-                        ax.scatter(
-                            vertex[0], vertex[1],
-                            c=color,
-                            s=35,
-                            edgecolors='white',
-                            linewidths=1.5,
-                            zorder=5,
-                            marker='o'
-                        )
-                    
-                    # Draw range labels (scale values) - proportionally adjusted
-                    range_labels = radar.draw_range_labels(
-                        ax=ax,
-                        fontsize=6,
-                        color="#8b6469",
-                        fontweight='normal'
-                    )
-                    
-                    # Draw parameter labels (metric names) - proportionally adjusted
-                    param_labels = radar.draw_param_labels(
-                        ax=ax,
-                        fontsize=9.5,
-                        color='#0f172a',
-                        fontweight='bold'
-                    )
-                    
-                    plt.tight_layout(pad=0.65)
-                    
-                    # Use container columns to center
-                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
-                    with radar_col2:
-                        st.pyplot(fig, width='content')
-                    
-                    plt.close()
-                    
-                    # Performance legend - centered
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #fbbf24; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>{team_name}</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>League Average</span>
-                        </div>
+                # Legend
+                st.markdown(f"""
+                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #fbbf24; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>{team_name}</span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>League Average</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                with col2:
-                    st.markdown("### Attack Statistics")
-                    
-                    attack_data = {
-                        'Metric': [
-                            'Goals per Game',
-                            'Total Goals',
-                            'xG per Game',
-                            'Total xG',
-                            'xG Difference',
-                            'Shots per Game',
-                            'Shots on Target/Game',
-                            'Big Chances/Game',
-                            'Big Chances Scored/Game',
-                            'Corners per Game',
-                            'Touches in Box/Game'
-                        ],
-                        'Team': [
-                            format_number(safe_get(team_stats, 'goals_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_goals'), 0),
-                            format_number(safe_get(team_stats, 'xg_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_xg'), 2),
-                            format_number(safe_get(team_stats, 'xg_difference'), 2),
-                            format_number(safe_get(team_stats, 'shots_per_game'), 2),
-                            format_number(safe_get(team_stats, 'shots_on_target_per_game'), 2),
-                            format_number(safe_get(team_stats, 'big_chances_created_per_game'), 2),
-                            format_number(safe_get(team_stats, 'big_chances_scored_per_game'), 2),
-                            format_number(safe_get(team_stats, 'corners_per_game'), 2),
-                            format_number(safe_get(team_stats, 'touches_in_box_per_game'), 2)
-                        ],
-                        'League': [
-                            format_number(safe_get(league_avg, 'goals_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_goals'), 1),
-                            format_number(safe_get(league_avg, 'xg_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_xg'), 2),
-                            format_number(safe_get(league_avg, 'xg_difference'), 2),
-                            format_number(safe_get(league_avg, 'shots_per_game'), 2),
-                            format_number(safe_get(league_avg, 'shots_on_target_per_game'), 2),
-                            format_number(safe_get(league_avg, 'big_chances_created_per_game'), 2),
-                            format_number(safe_get(league_avg, 'big_chances_scored_per_game'), 2),
-                            format_number(safe_get(league_avg, 'corners_per_game'), 2),
-                            format_number(safe_get(league_avg, 'touches_in_box_per_game'), 2)
-                        ],
-                        'Percentile': [
-                            f"{int(percentiles.get('goals_per_game', 0))}%" if percentiles.get('goals_per_game') else '-',
-                            f"{int(percentiles.get('total_goals', 0))}%" if percentiles.get('total_goals') else '-',
-                            f"{int(percentiles.get('xg_per_game', 0))}%" if percentiles.get('xg_per_game') else '-',
-                            f"{int(percentiles.get('total_xg', 0))}%" if percentiles.get('total_xg') else '-',
-                            f"{int(percentiles.get('xg_difference', 0))}%" if percentiles.get('xg_difference') else '-',
-                            f"{int(percentiles.get('shots_per_game', 0))}%" if percentiles.get('shots_per_game') else '-',
-                            f"{int(percentiles.get('shots_on_target_per_game', 0))}%" if percentiles.get('shots_on_target_per_game') else '-',
-                            f"{int(percentiles.get('big_chances_created_per_game', 0))}%" if percentiles.get('big_chances_created_per_game') else '-',
-                            f"{int(percentiles.get('big_chances_scored_per_game', 0))}%" if percentiles.get('big_chances_scored_per_game') else '-',
-                            f"{int(percentiles.get('corners_per_game', 0))}%" if percentiles.get('corners_per_game') else '-',
-                            f"{int(percentiles.get('touches_in_box_per_game', 0))}%" if percentiles.get('touches_in_box_per_game') else '-'
-                        ]
-                    }
-                    
-                    attack_df = pd.DataFrame(attack_data)
-                    
-                    # Convert all columns to strings to avoid Arrow serialization issues
-                    attack_df = prepare_dataframe_for_display(attack_df)
-                    
-                    # Style DataFrame to highlight percentile column
-                    def style_table(row):
-                        colors = [''] * len(row)
-                        
-                        # Compare Team vs League and apply color + bold to Team column (index 1)
-                        try:
-                            team_val_str = row['Team']
-                            league_val_str = row['League']
+            with col2:
+                st.markdown("### Attack Statistics")
+                
+                attack_metrics = [
+                    ('goals_per_game', 'Goals per Game', 2),
+                    ('total_goals', 'Total Goals', 0),
+                    ('xg_per_game', 'xG per Game', 2),
+                    ('total_xg', 'Total xG', 2),
+                    ('xg_difference', 'xG Difference', 2),
+                    ('shots_per_game', 'Shots per Game', 2),
+                    ('shots_on_target_per_game', 'Shots on Target/Game', 2),
+                    ('big_chances_created_per_game', 'Big Chances/Game', 2),
+                    ('big_chances_scored_per_game', 'Big Chances Scored/Game', 2),
+                    ('corners_per_game', 'Corners per Game', 2),
+                    ('touches_in_box_per_game', 'Touches in Box/Game', 2)
+                ]
+                
+                # Create stats table (no inverted metrics for attack)
+                attack_df = create_stats_table(
+                    attack_metrics, 
+                    attack_stats,           # Selected team's stats
+                    league_avg_attack,      # League averages
+                    percentiles             # Calculated percentiles
+                )
+                
+                inverted_names = attack_df.attrs.get('inverted_names', [])
+                styled_df = attack_df.style.apply(lambda row: style_table(row, inverted_names), axis=1)
+                st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
+        else:
+            st.warning("No attack statistics available for this team.")
                             
-                            # Remove any formatting and convert to float for comparison
-                            team_val = float(team_val_str.replace(',', '').replace('-', '0'))
-                            league_val = float(league_val_str.replace(',', '').replace('-', '0'))
-                            
-                            if team_val > league_val:
-                                colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
-                            elif team_val < league_val:
-                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
-                            else:
-                                colors[1] = 'font-weight: bold'  # Just bold if equal
-                        except:
-                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
-                        
-                        # Color code the Percentile column (index -1)
-                        pct_str = row['Percentile']
-                        if pct_str != '-':
-                            try:
-                                pct_val = int(pct_str.replace('%', ''))
-                                
-                                if pct_val >= 75:
-                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                                elif pct_val >= 50:
-                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                                elif pct_val >= 25:
-                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
-                                else:
-                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
-                            except:
-                                pass
-                        
-                        return colors
-                    
-                    styled_df = attack_df.style.apply(style_table, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
-                    
-                    st.caption("💡 **Percentile** = % teams with worse stats")
-            
     except Exception as e:
         logger.error(f"Error loading attack stats: {e}")
         st.error(f"Failed to load attack statistics: {e}")
         st.exception(e)
-
-
 
 # ============================================================================
 # DEFENSE TAB
 # ============================================================================
 
 with defense_tab:
-    
     try:
-        # Pobierz statystyki dla wszystkich drużyn w lidze
-        engine = get_engine()
-        query = f"""
-            SELECT * 
-            FROM gold.mart_team_defense
-            WHERE season_id = {selected_season_id}
-        """
-        
-        with engine.connect() as conn:
-            all_teams_df = pd.read_sql(query, conn)
-        
-        if not all_teams_df.empty:
-            team_stats_row = all_teams_df[all_teams_df['team_id'] == selected_team_id]
+        if isinstance(all_teams_defense, pd.DataFrame) and defense_stats:
+            # Calculate percentiles using pre-loaded data
+            league_avg_defense, percentiles = calculate_league_stats_and_percentiles(
+                all_teams_defense, 
+                defense_stats,       
+                None     
+            )
             
-            if team_stats_row.empty:
-                st.warning("No defense statistics available for this team.")
-            else:
-                team_stats = team_stats_row.iloc[0].to_dict()
+            # Override with actual league averages using mapped column names
+            mapped_league_avg = map_league_averages(league_averages, 'defense')
+            league_avg_defense.update(mapped_league_avg)
+
+            # Layout with radar and stats table
+            col1, col2 = st.columns([1.2, 1])
+            
+            with col1:
+                st.markdown("### Defense Radar")
                 
-                league_avg, percentiles = calculate_league_stats_and_percentiles(
-                    all_teams_df, 
-                    team_stats
+                defense_radar_metrics = [
+                    ('tackles_per_game', 'Tackles/Game'),
+                    ('interceptions_per_game', 'Interceptions/Game'),
+                    ('clearances_per_game', 'Clearances/Game'),
+                    ('blocked_shots_per_game', 'Blocked Shots/Game'),
+                    ('ball_recoveries_per_game', 'Ball Recoveries/Game'),
+                    ('clean_sheet_pct', 'Clean Sheet %'),
+                ]
+                
+                # Draw radar with RED color scheme
+                fig = draw_team_radar(
+                    team_stats=defense_stats,
+                    all_teams_df=all_teams_defense,
+                    percentiles=percentiles,
+                    league_avg=league_avg_defense,
+                    team_name=team_name,
+                    metric_config=defense_radar_metrics,
+                    radar_color='#ef4444',  # Red
+                    radar_edge_color='#dc2626'  # Dark red
                 )
                 
-                # Layout with radar and stats table
-                col1, col2 = st.columns([1.2, 1])
+                radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                with radar_col2:
+                    st.pyplot(fig, width='stretch')
+                plt.close()
                 
-                with col1:
-                    st.markdown("### Defense Radar")
-            
-                    # Metric configuration
-                    metric_config = [
-                        ('tackles_per_game', 'Tackles/Game'),
-                        ('interceptions_per_game', 'Interceptions/Game'),
-                        ('clearances_per_game', 'Clearances/Game'),
-                        ('blocked_shots_per_game', 'Blocked Shots/Game'),
-                        ('ball_recoveries_per_game', 'Ball Recoveries/Game'),
-                        ('clean_sheet_pct', 'Clean Sheet %'),
-                    ]
-                    
-                    metrics = [m[0] for m in metric_config]
-                    labels = [m[1] for m in metric_config]
-                    
-                    # Get actual values
-                    team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
-                    league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
-                    
-                    # Calculate min/max boundaries for radar (0 to 95th percentile)
-                    low = []
-                    high = []
-                    for metric in metrics:
-                        metric_values = all_teams_df[metric].dropna()
-                        low.append(0) 
-                        high_val = float(metric_values.quantile(0.95))
-                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
-                    
-                    # Initialize Radar
-                    radar = Radar(
-                        params=labels,
-                        min_range=low,
-                        max_range=high,
-                        num_rings=4, 
-                        ring_width=1,
-                        center_circle_radius=0
-                    )
-                    
-                    # Create figure
-                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
-                    
-                    # Setup radar axis
-                    radar.setup_axis(ax=ax, facecolor='white')
-                    
-                    # Suppress matplotlib warnings
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings('ignore', category=RuntimeWarning)
-                        
-                        # Draw concentric circles (baseline rings)
-                        rings_inner = radar.draw_circles(
-                            ax=ax, 
-                            facecolor='#f3f4f6',  # Light gray
-                            edgecolor='#d1d5db',  # Medium gray border
-                            lw=1.8,
-                            alpha=0.4
-                        )
-                        
-                        # League Average (as background/baseline) and Team Performance
-                        league_output = radar.draw_radar_compare(
-                            league_values,
-                            team_values,
-                            ax=ax,
-                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
-                            kwargs_compare={'facecolor': '#ef4444', 'alpha': 0.5, 'edgecolor': '#dc2626', 'linewidth': 3.6}
-                        )
-                    
-                    # Get vertices for markers
-                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
-                    
-                    # Calculate percentiles for team performance
-                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
-                    
-                    # Markers for team radar
-                    for vertex, pct in zip(vertices2, team_percentiles):
-                        color = '#ef4444' if pct >= 60 else '#dc2626'
-                        ax.scatter(
-                            vertex[0], vertex[1],
-                            c=color,
-                            s=35,
-                            edgecolors='white',
-                            linewidths=1.5,
-                            zorder=5,
-                            marker='o'
-                        )
-                    
-                    # Draw range labels (scale values)
-                    range_labels = radar.draw_range_labels(
-                        ax=ax,
-                        fontsize=6,
-                        color="#8b6469",
-                        fontweight='normal'
-                    )
-                    
-                    # Draw parameter labels (metric names)
-                    param_labels = radar.draw_param_labels(
-                        ax=ax,
-                        fontsize=9.5,
-                        color='#0f172a',
-                        fontweight='bold'
-                    )
-                    
-                    plt.tight_layout(pad=0.65)
-                    
-                    # Use container columns to center
-                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
-                    with radar_col2:
-                        st.pyplot(fig, width='content')
-                    
-                    plt.close()
-                    
-                    # Performance legend - centered
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #ef4444; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>{team_name}</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>League Average</span>
-                        </div>
+                # Legend with red color
+                st.markdown(f"""
+                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #ef4444; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>{team_name}</span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>League Average</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("### Defense Statistics")
                 
-                with col2:
-                    st.markdown("### Defense Statistics")
-                    
-                    defense_data = {
-                        'Metric': [
-                            'Goals Conceded/Game',
-                            'Total Goals Conceded',
-                            'xGA/Game',
-                            'Total xGA',
-                            'xGA Difference',
-                            'xGA Difference/Game',
-                            'Clean Sheets',
-                            'Clean Sheet %',
-                            'Tackles/Game',
-                            'Tackles Won %',
-                            'Interceptions/Game',
-                            'Clearances/Game',
-                            'Blocked Shots/Game',
-                            'Ball Recoveries/Game',
-                            'Aerial Duels Won %',
-                            'Ground Duels Won %',
-                            'Saves/Game'
-                        ],
-                        'Team': [
-                            format_number(safe_get(team_stats, 'goals_conceded_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_goals_conceded'), 0),
-                            format_number(safe_get(team_stats, 'xga_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_xga'), 2),
-                            format_number(safe_get(team_stats, 'xga_difference'), 2),
-                            format_number(safe_get(team_stats, 'xga_difference_per_game'), 2),
-                            format_number(safe_get(team_stats, 'clean_sheets'), 0),
-                            format_percentage(safe_get(team_stats, 'clean_sheet_pct')),
-                            format_number(safe_get(team_stats, 'tackles_per_game'), 2),
-                            format_percentage(safe_get(team_stats, 'avg_tackles_won_pct')),
-                            format_number(safe_get(team_stats, 'interceptions_per_game'), 2),
-                            format_number(safe_get(team_stats, 'clearances_per_game'), 2),
-                            format_number(safe_get(team_stats, 'blocked_shots_per_game'), 2),
-                            format_number(safe_get(team_stats, 'ball_recoveries_per_game'), 2),
-                            format_percentage(safe_get(team_stats, 'avg_aerial_duels_pct')),
-                            format_percentage(safe_get(team_stats, 'avg_ground_duels_pct')),
-                            format_number(safe_get(team_stats, 'saves_per_game'), 2)
-                        ],
-                        'League': [
-                            format_number(safe_get(league_avg, 'goals_conceded_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_goals_conceded'), 1),
-                            format_number(safe_get(league_avg, 'xga_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_xga'), 2),
-                            format_number(safe_get(league_avg, 'xga_difference'), 2),
-                            format_number(safe_get(league_avg, 'xga_difference_per_game'), 2),
-                            format_number(safe_get(league_avg, 'clean_sheets'), 1),
-                            format_percentage(safe_get(league_avg, 'clean_sheet_pct')),
-                            format_number(safe_get(league_avg, 'tackles_per_game'), 2),
-                            format_percentage(safe_get(league_avg, 'avg_tackles_won_pct')),
-                            format_number(safe_get(league_avg, 'interceptions_per_game'), 2),
-                            format_number(safe_get(league_avg, 'clearances_per_game'), 2),
-                            format_number(safe_get(league_avg, 'blocked_shots_per_game'), 2),
-                            format_number(safe_get(league_avg, 'ball_recoveries_per_game'), 2),
-                            format_percentage(safe_get(league_avg, 'avg_aerial_duels_pct')),
-                            format_percentage(safe_get(league_avg, 'avg_ground_duels_pct')),
-                            format_number(safe_get(league_avg, 'saves_per_game'), 2)
-                        ],
-                        'Percentile': [
-                            # Goals conceded - lower is better, so invert percentile
-                            f"{int(100 - percentiles.get('goals_conceded_per_game', 100))}%" if percentiles.get('goals_conceded_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_goals_conceded', 100))}%" if percentiles.get('total_goals_conceded') else '-',
-                            # xGA - lower is better, so invert percentile
-                            f"{int(100 - percentiles.get('xga_per_game', 100))}%" if percentiles.get('xga_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_xga', 100))}%" if percentiles.get('total_xga') else '-',
-                            f"{int(percentiles.get('xga_difference', 0))}%" if percentiles.get('xga_difference') else '-',
-                            f"{int(percentiles.get('xga_difference_per_game', 0))}%" if percentiles.get('xga_difference_per_game') else '-',
-                            f"{int(percentiles.get('clean_sheets', 0))}%" if percentiles.get('clean_sheets') else '-',
-                            f"{int(percentiles.get('clean_sheet_pct', 0))}%" if percentiles.get('clean_sheet_pct') else '-',
-                            f"{int(percentiles.get('tackles_per_game', 0))}%" if percentiles.get('tackles_per_game') else '-',
-                            f"{int(percentiles.get('avg_tackles_won_pct', 0))}%" if percentiles.get('avg_tackles_won_pct') else '-',
-                            f"{int(percentiles.get('interceptions_per_game', 0))}%" if percentiles.get('interceptions_per_game') else '-',
-                            f"{int(percentiles.get('clearances_per_game', 0))}%" if percentiles.get('clearances_per_game') else '-',
-                            f"{int(percentiles.get('blocked_shots_per_game', 0))}%" if percentiles.get('blocked_shots_per_game') else '-',
-                            f"{int(percentiles.get('ball_recoveries_per_game', 0))}%" if percentiles.get('ball_recoveries_per_game') else '-',
-                            f"{int(percentiles.get('avg_aerial_duels_pct', 0))}%" if percentiles.get('avg_aerial_duels_pct') else '-',
-                            f"{int(percentiles.get('avg_ground_duels_pct', 0))}%" if percentiles.get('avg_ground_duels_pct') else '-',
-                            f"{int(percentiles.get('saves_per_game', 0))}%" if percentiles.get('saves_per_game') else '-'
-                        ]
-                    }
-                    
-                    defense_df = pd.DataFrame(defense_data)
-                    
-                    # Convert all columns to strings to avoid Arrow serialization issues
-                    defense_df = prepare_dataframe_for_display(defense_df)
-                    
-                    # Style DataFrame to highlight percentile column
-                    def style_table(row):
-                        colors = [''] * len(row)
-                        
-                        # Get metric name to determine if lower is better
-                        metric = row['Metric']
-                        
-                        # Metrics where LOWER is better (invert color logic)
-                        lower_is_better = [
-                            'Goals Conceded/Game', 
-                            'Total Goals Conceded',
-                            'xGA/Game',
-                            'Total xGA',
-                            'xGA Difference',
-                            'xGA Difference/Game'
-                        ]
-                        
-                        # Compare Team vs League and apply color + bold to Team column (index 1)
-                        try:
-                            team_val_str = row['Team']
-                            league_val_str = row['League']
-                            
-                            # Remove any formatting and convert to float for comparison
-                            team_val = float(team_val_str.replace(',', '').replace('-', '0').replace('%', ''))
-                            league_val = float(league_val_str.replace(',', '').replace('-', '0').replace('%', ''))
-                            
-                            if metric in lower_is_better:
-                                # For defensive metrics where lower is better
-                                if team_val < league_val:
-                                    colors[1] = 'color: #178800; font-weight: bold'  # Green for below average (better)
-                                elif team_val > league_val:
-                                    colors[1] = 'color: #d3001c; font-weight: bold'  # Red for above average (worse)
-                                else:
-                                    colors[1] = 'font-weight: bold'  # Just bold if equal
-                            else:
-                                # For other metrics where higher is better
-                                if team_val > league_val:
-                                    colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
-                                elif team_val < league_val:
-                                    colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
-                                else:
-                                    colors[1] = 'font-weight: bold'  # Just bold if equal
-                        except:
-                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
-                        
-                        # Color code the Percentile column (index -1)
-                        pct_str = row['Percentile']
-                        if pct_str != '-':
-                            try:
-                                pct_val = int(pct_str.replace('%', ''))
-                                
-                                if pct_val >= 75:
-                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                                elif pct_val >= 50:
-                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                                elif pct_val >= 25:
-                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
-                                else:
-                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
-                            except:
-                                pass
-                        
-                        return colors
-                    
-                    styled_df = defense_df.style.apply(style_table, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=625, hide_index=True)
-                    
-                    st.caption("💡 **Percentile** = % teams with worse stats")
+                defense_metrics = [
+                    ('goals_conceded_per_game', 'Goals Conceded/Game', 2),
+                    ('total_goals_conceded', 'Total Goals Conceded', 0),
+                    ('xga_per_game', 'xGA/Game', 2),
+                    ('total_xga', 'Total xGA', 2),
+                    ('xga_difference', 'xGA Difference', 2),
+                    ('xga_difference_per_game', 'xGA Difference/Game', 2),
+                    ('clean_sheets', 'Clean Sheets', 0),
+                    ('clean_sheet_pct', 'Clean Sheet %', 1),
+                    ('tackles_per_game', 'Tackles/Game', 2),
+                    ('avg_tackles_won_pct', 'Tackles Won %', 1),
+                    ('interceptions_per_game', 'Interceptions/Game', 2),
+                    ('clearances_per_game', 'Clearances/Game', 2),
+                    ('blocked_shots_per_game', 'Blocked Shots/Game', 2),
+                    ('ball_recoveries_per_game', 'Ball Recoveries/Game', 2),
+                    ('avg_aerial_duels_pct', 'Aerial Duels Won %', 1),
+                    ('avg_ground_duels_pct', 'Ground Duels Won %', 1),
+                    ('saves_per_game', 'Saves/Game', 2)
+                ]
+                
+                # Metrics where lower is better
+                inverted = ['goals_conceded_per_game', 'total_goals_conceded', 'xga_per_game', 'total_xga']
+                
+                defense_df = create_stats_table(
+                    defense_metrics, 
+                    defense_stats, 
+                    league_avg_defense, 
+                    percentiles, 
+                    inverted
+                )
+                inverted_names = defense_df.attrs.get('inverted_names', [])
+                styled_df = defense_df.style.apply(lambda row: style_table(row, inverted_names), axis=1)
+                st.dataframe(styled_df, width='stretch', height=625, hide_index=True)
         else:
-            st.warning("No defense statistics available for this season.")
+            st.warning("No defense statistics available for this team.")
     
     except Exception as e:
         logger.error(f"Error loading defense stats: {e}")
@@ -1047,452 +1003,187 @@ with defense_tab:
 # ============================================================================
 
 with possession_tab:
-    
     try:
-        # Pobierz statystyki dla wszystkich drużyn w lidze
-        engine = get_engine()
-        query = f"""
-            SELECT * 
-            FROM gold.mart_team_possession
-            WHERE season_id = {selected_season_id}
-        """
-        
-        with engine.connect() as conn:
-            all_teams_df = pd.read_sql(query, conn)
-        
-        if not all_teams_df.empty:
-            team_stats_row = all_teams_df[all_teams_df['team_id'] == selected_team_id]
+        if isinstance(all_teams_possession, pd.DataFrame) and possession_stats:
+            # Calculate percentiles using pre-loaded data
+            league_avg_possession, percentiles = calculate_league_stats_and_percentiles(
+                all_teams_possession,  
+                possession_stats,     
+                None        
+            )
+
+            # Override with actual league averages using mapped column names
+            mapped_league_avg = map_league_averages(league_averages, 'possession')
+            league_avg_possession.update(mapped_league_avg)
+
+            # Layout with radar and stats table
+            col1, col2 = st.columns([1.2, 1])
             
-            if team_stats_row.empty:
-                st.warning("No possession statistics available for this team.")
-            else:
-                team_stats = team_stats_row.iloc[0].to_dict()
-                
-                league_avg, percentiles = calculate_league_stats_and_percentiles(
-                    all_teams_df, 
-                    team_stats
+            with col1:
+                st.markdown("### Possession Radar")
+        
+                possession_radar_metrics = [
+                    ('avg_possession_pct', 'Possession %'),
+                    ('pass_accuracy_pct', 'Pass Accuracy %'),
+                    ('accurate_passes_per_game', 'Accurate Passes/Game'),
+                    ('accurate_long_balls_per_game', 'Long Balls/Game'),
+                    ('final_third_entries_per_game', 'Final Third Entries/Game'),
+                    ('touches_in_box_per_game', 'Touches In Box/Game'),
+                ]
+
+                # Draw radar with PURPLE color scheme
+                fig = draw_team_radar(
+                    team_stats=possession_stats,
+                    all_teams_df=all_teams_possession,
+                    percentiles=percentiles,
+                    league_avg=league_avg_possession,
+                    team_name=team_name,
+                    metric_config=possession_radar_metrics,
+                    radar_color='#8b5cf6',  # Purple
+                    radar_edge_color='#7c3aed'  # Dark purple
                 )
+
+                radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                with radar_col2:
+                    st.pyplot(fig, width='stretch')
+                plt.close()
                 
-                # Layout with radar and stats table
-                col1, col2 = st.columns([1.2, 1])
-                
-                with col1:
-                    st.markdown("### Possession Radar")
-            
-                    # Metric configuration
-                    metric_config = [
-                        ('avg_possession_pct', 'Possession %'),
-                        ('pass_accuracy_pct', 'Pass Accuracy %'),
-                        ('accurate_passes_per_game', 'Accurate Passes/Game'),
-                        ('accurate_long_balls_per_game', 'Long Balls/Game'),
-                        ('final_third_entries_per_game', 'Final Third Entries/Game'),
-                        ('touches_in_box_per_game', 'Touches In Box/Game'),
-                    ]
-                    
-                    metrics = [m[0] for m in metric_config]
-                    labels = [m[1] for m in metric_config]
-                    
-                    # Get actual values
-                    team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
-                    league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
-                    
-                    # Calculate min/max boundaries for radar (0 to 95th percentile)
-                    low = []
-                    high = []
-                    for metric in metrics:
-                        metric_values = all_teams_df[metric].dropna()
-                        low.append(0) 
-                        high_val = float(metric_values.quantile(0.95))
-                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
-                    
-                    # Initialize Radar
-                    radar = Radar(
-                        params=labels,
-                        min_range=low,
-                        max_range=high,
-                        num_rings=4, 
-                        ring_width=1,
-                        center_circle_radius=0
-                    )
-                    
-                    # Create figure
-                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
-                    
-                    # Setup radar axis
-                    radar.setup_axis(ax=ax, facecolor='white')
-                    
-                    # Suppress matplotlib warnings
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings('ignore', category=RuntimeWarning)
-                        
-                        # Draw concentric circles (baseline rings)
-                        rings_inner = radar.draw_circles(
-                            ax=ax, 
-                            facecolor='#f3f4f6',  # Light gray
-                            edgecolor='#d1d5db',  # Medium gray border
-                            lw=1.8,
-                            alpha=0.4
-                        )
-                        
-                        # League Average (as background/baseline) and Team Performance
-                        league_output = radar.draw_radar_compare(
-                            league_values,
-                            team_values,
-                            ax=ax,
-                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
-                            kwargs_compare={'facecolor': '#8b5cf6', 'alpha': 0.5, 'edgecolor': '#7c3aed', 'linewidth': 3.6}
-                        )
-                    
-                    # Get vertices for markers
-                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
-                    
-                    # Calculate percentiles for team performance
-                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
-                    
-                    # Markers for team radar
-                    for vertex, pct in zip(vertices2, team_percentiles):
-                        color = '#8b5cf6' if pct >= 60 else '#7c3aed'
-                        ax.scatter(
-                            vertex[0], vertex[1],
-                            c=color,
-                            s=35,
-                            edgecolors='white',
-                            linewidths=1.5,
-                            zorder=5,
-                            marker='o'
-                        )
-                    
-                    # Draw range labels (scale values)
-                    range_labels = radar.draw_range_labels(
-                        ax=ax,
-                        fontsize=6,
-                        color="#8b6469",
-                        fontweight='normal'
-                    )
-                    
-                    # Draw parameter labels (metric names)
-                    param_labels = radar.draw_param_labels(
-                        ax=ax,
-                        fontsize=9.5,
-                        color='#0f172a',
-                        fontweight='bold'
-                    )
-                    
-                    plt.tight_layout(pad=0.65)
-                    
-                    # Use container columns to center
-                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
-                    with radar_col2:
-                        st.pyplot(fig, width='content')
-                    
-                    plt.close()
-                    
-                    # Performance legend - centered
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #8b5cf6; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>{team_name}</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
-                            <span>League Average</span>
-                        </div>
+                st.markdown(f"""
+                <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #8b5cf6; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>{team_name}</span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="display: flex; align-items: center;">
+                        <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
+                        <span>League Average</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("### Possession Statistics")
                 
-                with col2:
-                    st.markdown("### Possession Statistics")
-                    
-                    possession_data = {
-                        'Metric': [
-                            'Avg Possession %',
-                            'Pass Accuracy %',
-                            'Total Passes/Game',
-                            'Accurate Passes/Game',
-                            'Long Balls/Game',
-                            'Accurate Crosses/Game',
-                            'Final Third Entries/Game',
-                            'Touches in Box/Game',
-                            'Dispossessed/Game',
-                            'Total Accurate Passes',
-                            'Total Passes'
-                        ],
-                        'Team': [
-                            format_percentage(safe_get(team_stats, 'avg_possession_pct')),
-                            format_percentage(safe_get(team_stats, 'pass_accuracy_pct')),
-                            format_number(safe_get(team_stats, 'total_passes_per_game'), 1),
-                            format_number(safe_get(team_stats, 'accurate_passes_per_game'), 1),
-                            format_number(safe_get(team_stats, 'accurate_long_balls_per_game'), 2),
-                            format_number(safe_get(team_stats, 'accurate_crosses_per_game'), 2),
-                            format_number(safe_get(team_stats, 'final_third_entries_per_game'), 2),
-                            format_number(safe_get(team_stats, 'touches_in_box_per_game'), 2),
-                            format_number(safe_get(team_stats, 'dispossessed_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_accurate_passes'), 0),
-                            format_number(safe_get(team_stats, 'total_passes'), 0)
-                        ],
-                        'League': [
-                            format_percentage(safe_get(league_avg, 'avg_possession_pct')),
-                            format_percentage(safe_get(league_avg, 'pass_accuracy_pct')),
-                            format_number(safe_get(league_avg, 'total_passes_per_game'), 1),
-                            format_number(safe_get(league_avg, 'accurate_passes_per_game'), 1),
-                            format_number(safe_get(league_avg, 'accurate_long_balls_per_game'), 2),
-                            format_number(safe_get(league_avg, 'accurate_crosses_per_game'), 2),
-                            format_number(safe_get(league_avg, 'final_third_entries_per_game'), 2),
-                            format_number(safe_get(league_avg, 'touches_in_box_per_game'), 2),
-                            format_number(safe_get(league_avg, 'dispossessed_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_accurate_passes'), 1),
-                            format_number(safe_get(league_avg, 'total_passes'), 1)
-                        ],
-                        'Percentile': [
-                            f"{int(percentiles.get('avg_possession_pct', 0))}%" if percentiles.get('avg_possession_pct') else '-',
-                            f"{int(percentiles.get('pass_accuracy_pct', 0))}%" if percentiles.get('pass_accuracy_pct') else '-',
-                            f"{int(percentiles.get('total_passes_per_game', 0))}%" if percentiles.get('total_passes_per_game') else '-',
-                            f"{int(percentiles.get('accurate_passes_per_game', 0))}%" if percentiles.get('accurate_passes_per_game') else '-',
-                            f"{int(percentiles.get('accurate_long_balls_per_game', 0))}%" if percentiles.get('accurate_long_balls_per_game') else '-',
-                            f"{int(percentiles.get('accurate_crosses_per_game', 0))}%" if percentiles.get('accurate_crosses_per_game') else '-',
-                            f"{int(percentiles.get('final_third_entries_per_game', 0))}%" if percentiles.get('final_third_entries_per_game') else '-',
-                            f"{int(percentiles.get('touches_in_box_per_game', 0))}%" if percentiles.get('touches_in_box_per_game') else '-',
-                            # Dispossessed - lower is better
-                            f"{int(100 - percentiles.get('dispossessed_per_game', 100))}%" if percentiles.get('dispossessed_per_game') else '-',
-                            f"{int(percentiles.get('total_accurate_passes', 0))}%" if percentiles.get('total_accurate_passes') else '-',
-                            f"{int(percentiles.get('total_passes', 0))}%" if percentiles.get('total_passes') else '-'
-                        ]
-                    }
-                    
-                    possession_df = pd.DataFrame(possession_data)
-                    
-                    # Convert all columns to strings to avoid Arrow serialization issues
-                    possession_df = prepare_dataframe_for_display(possession_df)
-                    
-                    # Style DataFrame to highlight percentile column
-                    def style_table(row):
-                        colors = [''] * len(row)
-                        
-                        # Compare Team vs League and apply color + bold to Team column (index 1)
-                        try:
-                            team_val_str = row['Team']
-                            league_val_str = row['League']
-                            
-                            # Remove any formatting and convert to float for comparison
-                            team_val = float(team_val_str.replace(',', '').replace('-', '0').replace('%', ''))
-                            league_val = float(league_val_str.replace(',', '').replace('-', '0').replace('%', ''))
-                            
-                            if team_val > league_val:
-                                colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
-                            elif team_val < league_val:
-                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
-                            else:
-                                colors[1] = 'font-weight: bold'  # Just bold if equal
-                        except:
-                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
-                        
-                        # Color code the Percentile column (index -1)
-                        pct_str = row['Percentile']
-                        if pct_str != '-':
-                            try:
-                                pct_val = int(pct_str.replace('%', ''))
-                                
-                                if pct_val >= 75:
-                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                                elif pct_val >= 50:
-                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                                elif pct_val >= 25:
-                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
-                                else:
-                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
-                            except:
-                                pass
-                        
-                        return colors
-                    
-                    styled_df = possession_df.style.apply(style_table, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
-                    
-                    st.caption("💡 **Percentile** = % teams with worse stats")
+                possession_metrics = [
+                    ('avg_possession_pct', 'Avg Possession %', 1),
+                    ('pass_accuracy_pct', 'Pass Accuracy %', 1),
+                    ('total_passes_per_game', 'Total Passes/Game', 1),
+                    ('accurate_passes_per_game', 'Accurate Passes/Game', 1),
+                    ('accurate_long_balls_per_game', 'Long Balls/Game', 2),
+                    ('accurate_crosses_per_game', 'Accurate Crosses/Game', 2),
+                    ('final_third_entries_per_game', 'Final Third Entries/Game', 2),
+                    ('touches_in_box_per_game', 'Touches in Box/Game', 2),
+                    ('dispossessed_per_game', 'Dispossessed/Game', 2),
+                    ('total_accurate_passes', 'Total Accurate Passes', 0),
+                    ('total_passes', 'Total Passes', 0)
+                ]
+                
+                inverted = ['dispossessed_per_game']
+                
+                possession_df = create_stats_table(
+                    possession_metrics, 
+                    possession_stats, 
+                    league_avg_possession, 
+                    percentiles, 
+                    inverted
+                )
+                inverted_names = possession_df.attrs.get('inverted_names', [])
+                styled_df = possession_df.style.apply(lambda row: style_table(row, inverted_names), axis=1)
+                st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
         else:
-            st.warning("No possession statistics available for this season.")
-    
+            st.warning("No possession statistics available for this team.")
+
     except Exception as e:
         logger.error(f"Error loading possession stats: {e}")
         st.error(f"Failed to load possession statistics: {e}")
         st.exception(e)
-
 
 # ============================================================================
 # DISCIPLINE TAB
 # ============================================================================
 
 with discipline_tab:
-    
     try:
-        # Pobierz statystyki dla wszystkich drużyn w lidze
-        engine = get_engine()
-        query = f"""
-            SELECT * 
-            FROM gold.mart_team_discipline
-            WHERE season_id = {selected_season_id}
-        """
-        
-        with engine.connect() as conn:
-            all_teams_df = pd.read_sql(query, conn)
-        
-        if not all_teams_df.empty:
-            team_stats_row = all_teams_df[all_teams_df['team_id'] == selected_team_id]
+        if isinstance(all_teams_discipline, pd.DataFrame) and discipline_stats:
+            # Calculate percentiles using pre-loaded data
+            league_avg_discipline, percentiles = calculate_league_stats_and_percentiles(
+                all_teams_discipline, 
+                discipline_stats,       
+                None       
+            )
+
+            # Override with actual league averages using mapped column names
+            mapped_league_avg = map_league_averages(league_averages, 'discipline')
+            league_avg_discipline.update(mapped_league_avg)
+
+            # Layout with stats table
+            col1 = st.columns([1])
             
-            if team_stats_row.empty:
-                st.warning("No discipline statistics available for this team.")
-            else:
-                team_stats = team_stats_row.iloc[0].to_dict()
+            with col1[0]:
+                st.markdown("### Discipline Statistics")
                 
-                league_avg, percentiles = calculate_league_stats_and_percentiles(
-                    all_teams_df, 
-                    team_stats
+                discipline_metrics = [
+                    ('yellow_cards_per_game', 'Yellow Cards/Game', 2),
+                    ('total_yellow_cards', 'Total Yellow Cards', 0),
+                    ('total_red_cards', 'Red Cards', 0),
+                    ('fouls_per_game', 'Fouls/Game', 2),
+                    ('total_fouls', 'Total Fouls', 0),
+                    ('offsides_per_game', 'Offsides/Game', 2),
+                    ('total_offsides', 'Total Offsides', 0),
+                    ('free_kicks_per_game', 'Free Kicks/Game', 2),
+                    ('total_free_kicks', 'Total Free Kicks', 0)
+                ]
+                
+                # All discipline metrics - lower is better
+                inverted = [metric[0] for metric in discipline_metrics]
+                
+                discipline_df = create_stats_table(
+                    discipline_metrics, 
+                    discipline_stats, 
+                    league_avg_discipline, 
+                    percentiles, 
+                    inverted
                 )
+                inverted_names = discipline_df.attrs.get('inverted_names', [])
+                styled_df = discipline_df.style.apply(lambda row: style_table(row, inverted_names), axis=1)
+                st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
                 
-                # Layout with radar and stats table
-                col1= st.columns([1])
+                # Fair Play Score
+                st.markdown("### Fair Play Rating")
                 
-                with col1[0]:
-                    st.markdown("### Discipline Statistics")
-                    
-                    discipline_data = {
-                        'Metric': [
-                            'Yellow Cards/Game',
-                            'Total Yellow Cards',
-                            'Red Cards',
-                            'Fouls/Game',
-                            'Total Fouls',
-                            'Offsides/Game',
-                            'Total Offsides',
-                            'Free Kicks/Game',
-                            'Total Free Kicks'
-                        ],
-                        'Team': [
-                            format_number(safe_get(team_stats, 'yellow_cards_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_yellow_cards'), 0),
-                            format_number(safe_get(team_stats, 'total_red_cards'), 0),
-                            format_number(safe_get(team_stats, 'fouls_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_fouls'), 0),
-                            format_number(safe_get(team_stats, 'offsides_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_offsides'), 0),
-                            format_number(safe_get(team_stats, 'free_kicks_per_game'), 2),
-                            format_number(safe_get(team_stats, 'total_free_kicks'), 0)
-                        ],
-                        'League': [
-                            format_number(safe_get(league_avg, 'yellow_cards_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_yellow_cards'), 1),
-                            format_number(safe_get(league_avg, 'total_red_cards'), 1),
-                            format_number(safe_get(league_avg, 'fouls_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_fouls'), 1),
-                            format_number(safe_get(league_avg, 'offsides_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_offsides'), 1),
-                            format_number(safe_get(league_avg, 'free_kicks_per_game'), 2),
-                            format_number(safe_get(league_avg, 'total_free_kicks'), 1)
-                        ],
-                        'Percentile': [
-                            # For discipline - lower is better, so invert
-                            f"{int(100 - percentiles.get('yellow_cards_per_game', 100))}%" if percentiles.get('yellow_cards_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_yellow_cards', 100))}%" if percentiles.get('total_yellow_cards') else '-',
-                            f"{int(100 - percentiles.get('total_red_cards', 100))}%" if percentiles.get('total_red_cards') else '-',
-                            f"{int(100 - percentiles.get('fouls_per_game', 100))}%" if percentiles.get('fouls_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_fouls', 100))}%" if percentiles.get('total_fouls') else '-',
-                            f"{int(100 - percentiles.get('offsides_per_game', 100))}%" if percentiles.get('offsides_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_offsides', 100))}%" if percentiles.get('total_offsides') else '-',
-                            f"{int(100 - percentiles.get('free_kicks_per_game', 100))}%" if percentiles.get('free_kicks_per_game') else '-',
-                            f"{int(100 - percentiles.get('total_free_kicks', 100))}%" if percentiles.get('total_free_kicks') else '-'
-                        ]
-                    }
-                    
-                    discipline_df = pd.DataFrame(discipline_data)
-                    
-                    # Convert all columns to strings to avoid Arrow serialization issues
-                    discipline_df = prepare_dataframe_for_display(discipline_df)
-                    
-                    # Style DataFrame to highlight percentile column
-                    def style_table(row):
-                        colors = [''] * len(row)
-                        
-                        # Compare Team vs League - For discipline, LOWER is better
-                        try:
-                            team_val_str = row['Team']
-                            league_val_str = row['League']
-                            
-                            # Remove any formatting and convert to float for comparison
-                            team_val = float(team_val_str.replace(',', '').replace('-', '0'))
-                            league_val = float(league_val_str.replace(',', '').replace('-', '0'))
-                            
-                            # Inverted: lower is better for discipline
-                            if team_val < league_val:
-                                colors[1] = 'color: #178800; font-weight: bold'  # Green for better discipline
-                            elif team_val > league_val:
-                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for worse discipline
-                            else:
-                                colors[1] = 'font-weight: bold'  # Just bold if equal
-                        except:
-                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
-                        
-                        # Color code the Percentile column (index -1)
-                        pct_str = row['Percentile']
-                        if pct_str != '-':
-                            try:
-                                pct_val = int(pct_str.replace('%', ''))
-                                
-                                if pct_val >= 75:
-                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                                elif pct_val >= 50:
-                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                                elif pct_val >= 25:
-                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
-                                else:
-                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
-                            except:
-                                pass
-                        
-                        return colors
-                    
-                    styled_df = discipline_df.style.apply(style_table, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
-                    
-                    st.caption("💡 **Percentile** = % teams with better discipline (lower values are better)")
-                    
-                    # Fair Play Score
-                    st.markdown("### Fair Play Rating")
-                    
-                    total_yellows = safe_get(team_stats, 'total_yellow_cards', 0)
-                    total_reds = safe_get(team_stats, 'total_red_cards', 0)
-                    matches_played = safe_get(team_stats, 'matches_played', 1)
-                    
-                    fair_play_score = ((total_yellows * 1) + (total_reds * 3)) / matches_played if matches_played > 0 else 0
-                    
-                    if fair_play_score < 2:
-                        fair_play_rating = "Excellent ⭐⭐⭐"
-                        color = "green"
-                    elif fair_play_score < 3:
-                        fair_play_rating = "Good ⭐⭐"
-                        color = "blue"
-                    elif fair_play_score < 4:
-                        fair_play_rating = "Average ⭐"
-                        color = "orange"
-                    else:
-                        fair_play_rating = "Poor ⚠️"
-                        color = "red"
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Fair Play Score", f"{fair_play_score:.2f}")
-                    with col2:
-                        st.markdown(f"**Rating:** :{color}[{fair_play_rating}]")
-                    
-                    st.caption("Fair Play Score = (Yellow cards × 1 + Red cards × 3) / Matches played")
+                total_yellows = safe_get(discipline_stats, 'total_yellow_cards', 0)
+                total_reds = safe_get(discipline_stats, 'total_red_cards', 0)
+                matches_played = safe_get(discipline_stats, 'matches_played', 1)
+                
+                fair_play_score = ((total_yellows * 1) + (total_reds * 3)) / matches_played if matches_played > 0 else 0
+                
+                if fair_play_score < 2:
+                    fair_play_rating = "Excellent ⭐⭐⭐"
+                    color = "green"
+                elif fair_play_score < 3:
+                    fair_play_rating = "Good ⭐⭐"
+                    color = "blue"
+                elif fair_play_score < 4:
+                    fair_play_rating = "Average ⭐"
+                    color = "orange"
+                else:
+                    fair_play_rating = "Poor ⚠️"
+                    color = "red"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Fair Play Score", f"{fair_play_score:.2f}")
+                with col2:
+                    st.markdown(f"**Rating:** :{color}[{fair_play_rating}]")
+                
+                st.caption("Fair Play Score = (Yellow cards × 1 + Red cards × 3) / Matches played")
         else:
-            st.warning("No discipline statistics available for this season.")
+            st.warning("No discipline statistics available for this team.")
     
     except Exception as e:
         logger.error(f"Error loading discipline stats: {e}")
         st.error(f"Failed to load discipline statistics: {e}")
         st.exception(e)
-
 
 # ============================================================================
 # FOOTER

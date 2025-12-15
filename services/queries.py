@@ -21,6 +21,7 @@ from src.models import (
     HeadToHead,
     UpcomingPredictions,
     TeamBttsAnalysis,
+    LeagueAverages
 )
 from services.db import get_db
 
@@ -192,21 +193,85 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     finally:
         db.close()
 
-def get_team_stats(
+def get_all_team_stats(
     team_id: int,
-    stat_type: str,
     season_id: Optional[int] = None
-) -> Dict[str, Any]:
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Get all team statistics categories in a single database call.
+    
+    Args:
+        team_id: Team identifier
+        season_id: Season to filter by (None for latest)
+    
+    Returns:
+        Dictionary with keys 'attack', 'defense', 'possession', 'discipline', 'overview', 'btts'
+        Each value is a dict of statistics for that category
+    """
+    db = next(get_db())
+    try:
+        from sqlalchemy import inspect
+        
+        model_map = {
+            'attack': TeamAttack,
+            'defense': TeamDefense,
+            'possession': TeamPossession,
+            'discipline': TeamDiscipline,
+            'overview': TeamOverview,
+            'btts': TeamBttsAnalysis,
+        }
+        
+        results = {}
+        
+        # If no season_id provided, get latest season once
+        if not season_id:
+            subquery = select(func.max(TeamOverview.season_id)).where(
+                TeamOverview.team_id == team_id
+            ).scalar_subquery()
+            season_id = db.execute(select(subquery)).scalar()
+        
+        # Query all models in one transaction
+        for stat_type, model in model_map.items():
+            query = select(model).where(
+                model.team_id == team_id,
+                model.season_id == season_id
+            )
+            
+            result = db.execute(query).scalar_one_or_none()
+            
+            if result:
+                mapper = inspect(result.__class__)
+                results[stat_type] = {
+                    column.key: (
+                        float(getattr(result, column.key)) 
+                        if isinstance(getattr(result, column.key), Decimal)
+                        else getattr(result, column.key)
+                    )
+                    for column in mapper.columns
+                }
+            else:
+                results[stat_type] = {}
+        
+        return results
+    finally:
+        db.close()
+
+def get_team_stats(
+    stat_type: str,
+    season_id: Optional[int] = None,
+    team_id: Optional[int] = None
+) -> Dict[str, Any] | pd.DataFrame:
     """
     Get team statistics by category.
     
     Args:
-        team_id: Team identifier
         stat_type: One of 'attack', 'defense', 'possession', 'discipline', 'overview'
         season_id: Season to filter by (None for latest)
+        team_id: Team identifier (None for ALL teams - returns DataFrame)
     
     Returns:
-        Dictionary with relevant statistics for the stat_type
+        If team_id provided: Dictionary with statistics for that team
+        If team_id is None: DataFrame with statistics for ALL teams in the season
     """
     db = next(get_db())
     try:
@@ -223,34 +288,116 @@ def get_team_stats(
             raise ValueError(f"Invalid stat_type. Must be one of: {list(model_map.keys())}")
         
         model = model_map[stat_type]
-        query = select(model).where(model.team_id == team_id)
         
-        if season_id:
-            query = query.where(model.season_id == season_id)
+        # Build base query
+        if team_id is not None:
+            # Single team query
+            query = select(model).where(model.team_id == team_id)
+            
+            if season_id:
+                query = query.where(model.season_id == season_id)
+            else:
+                # Get latest season for this team
+                subquery = select(func.max(model.season_id)).where(
+                    model.team_id == team_id
+                ).scalar_subquery()
+                query = query.where(model.season_id == subquery)
+            
+            result = db.execute(query).scalar_one_or_none()
+            
+            if not result:
+                return {}
+            
+            # Convert to dict
+            from sqlalchemy import inspect
+            mapper = inspect(result.__class__)
+            
+            return {
+                column.key: (
+                    float(getattr(result, column.key)) 
+                    if isinstance(getattr(result, column.key), Decimal) and getattr(result, column.key) is not None
+                    else (getattr(result, column.key) if getattr(result, column.key) is not None else 0)
+                )
+                for column in mapper.columns
+            }
+        
         else:
-            # Get latest season
-            subquery = select(func.max(model.season_id)).where(
-                model.team_id == team_id
-            ).scalar_subquery()
-            query = query.where(model.season_id == subquery)
+            # ALL teams query - return DataFrame
+            query = select(model)
+            
+            if season_id:
+                query = query.where(model.season_id == season_id)
+            else:
+                # Get latest season
+                subquery = select(func.max(model.season_id)).scalar_subquery()
+                query = query.where(model.season_id == subquery)
+            
+            results = db.execute(query).scalars().all()
+            
+            if not results:
+                return pd.DataFrame()
+            
+            # Convert to DataFrame
+            from sqlalchemy import inspect
+            
+            data = []
+            for result in results:
+                mapper = inspect(result.__class__)
+                row = {
+                    column.key: (
+                        float(getattr(result, column.key)) 
+                        if isinstance(getattr(result, column.key), Decimal) and getattr(result, column.key) is not None
+                        else (getattr(result, column.key) if getattr(result, column.key) is not None else 0)
+                    )
+                    for column in mapper.columns
+                }
+                data.append(row)
+            
+            return pd.DataFrame(data)
+    
+    finally:
+        db.close()
+
+def get_league_averages(
+    season_id: int
+) -> Dict[str, Any]:
+    """
+    Get league average statistics for a given season.
+    
+    Args:
+        season_id: Season identifier
+    
+    Returns:
+        Dictionary with league average statistics
+    """
+    db = next(get_db())
+    try:
+        query = select(LeagueAverages).where(
+            LeagueAverages.season_id == season_id
+        )
         
         result = db.execute(query).scalar_one_or_none()
         
         if not result:
+            logger.warning(f"No league averages found for season_id: {season_id}")
             return {}
         
-        # Convert SQLAlchemy model to dict, handling Decimal types
         from sqlalchemy import inspect
         mapper = inspect(result.__class__)
         
         return {
             column.key: (
                 float(getattr(result, column.key)) 
-                if isinstance(getattr(result, column.key), Decimal)
-                else getattr(result, column.key)
+                if isinstance(getattr(result, column.key), Decimal) and getattr(result, column.key) is not None
+                else (getattr(result, column.key) if getattr(result, column.key) is not None else 0)
             )
             for column in mapper.columns
         }
+    
+    except Exception as e:
+        logger.error(f"Error fetching league averages for season {season_id}: {e}")
+        raise 
+    
     finally:
         db.close()
 
@@ -259,8 +406,8 @@ def get_head_to_head(
     team2_id: int,
     limit: int = 10
 ) -> Dict[str, Any]:
-    """
-    Get head-to-head statistics between two teams.
+
+    """Get head-to-head statistics between two teams.
     
     Args:
         team1_id: First team identifier
@@ -268,8 +415,8 @@ def get_head_to_head(
         limit: Not used (kept for API compatibility)
     
     Returns:
-        Dictionary with h2h stats: matches_played, wins, draws, goals, etc.
-    """
+        Dictionary with h2h stats: matches_played, wins, draws, goals, etc."""
+    
     db = next(get_db())
     try:
         # H2H table stores pairs in both directions, query both

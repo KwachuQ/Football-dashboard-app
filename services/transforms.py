@@ -678,48 +678,59 @@ def calculate_goal_difference(
 def calculate_league_stats_and_percentiles(
     all_teams_df: pd.DataFrame,
     team_stats: Dict[str, Any],
-    exclude_cols: Optional[List[str]] = None
+    league_avg: Optional[Dict[str, Any]] = None
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """
-    Calculate league-wide statistics and percentiles for a specific team.
+    Calculate league averages and team percentiles from ALL teams data.
     
     Args:
-        all_teams_df: DataFrame with statistics for all teams in the league
-        team_stats: Dictionary with statistics for the specific team
-        exclude_cols: List of columns to exclude from calculations
+        all_teams_df: DataFrame with ALL teams' statistics
+        team_stats: Dictionary with selected team's statistics
+        league_avg: Optional pre-calculated league averages (if None, calculated from df)
     
     Returns:
-        Tuple of (league_averages, percentiles)
+        Tuple of (league_averages_dict, percentiles_dict)
     """
-    if exclude_cols is None:
-        exclude_cols = ['team_id', 'team_name', 'season_id', 'season_name', 'season_year']
+    if all_teams_df.empty or not team_stats:
+        return {}, {}
     
-    # Get numeric columns only
-    numeric_cols = all_teams_df.select_dtypes(include=[np.number]).columns
-    numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
+    exclude_cols = [
+        'team_id', 'season_id', 'tournament_id', 'team_name', 
+        'matches_played', 'updated_at', 'created_at'
+    ]
     
-    # Calculate league averages
-    league_avg = all_teams_df[numeric_cols].mean().to_dict()
+    # Get numeric columns from the DataFrame
+    numeric_cols = all_teams_df.select_dtypes(include=['number']).columns
     
-    # Calculate percentiles for each metric
+    # Filter league_avg to only include columns present in this DataFrame
+    filtered_league_avg = {}
+    if league_avg:
+        for col in numeric_cols:
+            if col not in exclude_cols and col in league_avg:
+                filtered_league_avg[col] = league_avg[col]
+    
+    # If no pre-calculated averages or missing columns, calculate from DataFrame
+    for col in numeric_cols:
+        if col not in exclude_cols and col not in filtered_league_avg:
+            filtered_league_avg[col] = float(all_teams_df[col].mean())
+    
+    # Calculate percentiles for team
     percentiles = {}
     for col in numeric_cols:
-        if col in team_stats and pd.notna(team_stats[col]):
-            try:
-                percentile = percentileofscore(
-                    all_teams_df[col].dropna(), 
-                    team_stats[col], 
-                    kind='rank'
-                )
-                percentiles[col] = round(float(percentile), 1)
-            except Exception as e:
-                logger.warning(f"Failed to calculate percentile for {col}: {e}")
+        if col not in exclude_cols and col in team_stats:
+            team_value = team_stats.get(col)
+            if team_value is not None and pd.notna(team_value):
+                col_values = all_teams_df[col].dropna()
+                if len(col_values) > 0:
+                    from scipy.stats import percentileofscore
+                    percentile = percentileofscore(col_values, float(team_value), kind='rank')
+                    percentiles[col] = float(percentile)
+                else:
+                    percentiles[col] = None
+            else:
                 percentiles[col] = None
-        else:
-            percentiles[col] = None
     
-    return league_avg, percentiles
-
+    return filtered_league_avg, percentiles
 
 def calculate_radar_scales(
     all_teams_df: pd.DataFrame,

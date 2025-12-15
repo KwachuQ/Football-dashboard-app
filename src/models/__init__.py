@@ -11,6 +11,7 @@ from src.models.match_predictions import MatchPredictions
 from src.models.team_btts_analysis import TeamBttsAnalysis
 from src.models.upcoming_fixtures import UpcomingFixtures
 from src.models.upcoming_predictions import UpcomingPredictions
+from src.models.league_averages import LeagueAverages
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "TeamBttsAnalysis",
     "UpcomingFixtures",
     "UpcomingPredictions",
+    "LeagueAverages",
 ]
