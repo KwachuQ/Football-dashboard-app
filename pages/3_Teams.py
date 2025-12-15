@@ -31,6 +31,15 @@ from services.db import get_engine
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Hide default Streamlit sidebar first item (menu)
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] li:first-child {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # Page configuration
 st.set_page_config(
     page_title="Teams - Football Analytics",
@@ -55,14 +64,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown("""
-    <style>
-    [data-testid="stSidebarNav"] li:first-child {
-        display: none;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -73,20 +74,17 @@ def safe_get(data: Optional[Dict[str, Any]], key: str, default: Any = 0) -> Any:
         return default
     return data.get(key, default)
 
-
 def format_percentage(value: Optional[float]) -> str:
     """Format float as percentage string."""
     if value is None:
         return "N/A"
     return f"{value:.1f}%"
 
-
 def format_number(value: Optional[float], decimals: int = 2) -> str:
     """Format number with specified decimals."""
     if value is None:
         return "N/A"
     return f"{value:.{decimals}f}"
-
 
 def parse_form_results(form_string: Optional[str], max_length: int = 5) -> list:
     """Parse form string (e.g., 'WWDLW') into list of results."""
@@ -95,12 +93,10 @@ def parse_form_results(form_string: Optional[str], max_length: int = 5) -> list:
     results = list(form_string[:max_length])
     return results
 
-
 def results_to_points(results: list) -> list:
     """Convert W/D/L results to points [3, 1, 0]."""
     points_map = {'W': 3, 'D': 1, 'L': 0}
     return [points_map.get(r, 0) for r in results]
-
 
 def prepare_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -579,7 +575,8 @@ with st.container(border=True):
 # LOAD ALL TEAM STATS
 # ============================================================================
 
-# Initialize all variables to prevent "possibly unbound" errors
+# Initialize all variables
+
 attack_stats = defense_stats = possession_stats = discipline_stats = overview_stats = btts_stats = {}
 all_teams_attack = all_teams_defense = all_teams_possession = all_teams_discipline = pd.DataFrame()
 league_averages = {}

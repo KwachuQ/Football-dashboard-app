@@ -17,12 +17,7 @@ from services.queries import (
     get_head_to_head
 )
 
-st.set_page_config(
-    page_title="Fixtures - Football Analytics",
-    page_icon="📅",
-    layout="wide"
-)
-
+# Hide default Streamlit sidebar first item (menu)
 st.markdown("""
     <style>
     [data-testid="stSidebarNav"] li:first-child {
@@ -30,6 +25,13 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
+# Page configuration
+st.set_page_config(
+    page_title="Fixtures - Football Analytics",
+    page_icon="📅",
+    layout="wide"
+)
 
 # ============================================================================
 # Compact Header with inline date info

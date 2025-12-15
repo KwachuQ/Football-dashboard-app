@@ -20,12 +20,7 @@ from services.cache import CacheManager, CacheMonitor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-st.set_page_config(
-    page_title="Home",
-    page_icon="⚽",
-    layout="wide"
-)
-
+# Hide default Streamlit sidebar first item (menu)
 st.markdown("""
     <style>
     [data-testid="stSidebarNav"] li:first-child {
@@ -33,6 +28,13 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
+# Page configuration
+st.set_page_config(
+    page_title="Home",
+    page_icon="⚽",
+    layout="wide"
+)
 
 # Helper functions
 @st.cache_data(ttl=3600)
