@@ -13,6 +13,7 @@ import math
 import matplotlib.pyplot as plt
 from mplsoccer import Radar
 from matplotlib import font_manager
+import warnings
 
 
 # Import existing components and services
@@ -446,7 +447,7 @@ with form_tab:
 with attack_tab:
     
     try:
-        # Pobierz statystyki dla wszystkich drużyn w lidze
+        # Get stats for all teams in the league
         engine = get_engine()
         query = f"""
             SELECT * 
@@ -458,7 +459,7 @@ with attack_tab:
             all_teams_df = pd.read_sql(query, conn)
         
         if not all_teams_df.empty:
-            # Statystyki dla wybranej drużyny
+            # Stats for selected team
             team_stats_row = all_teams_df[all_teams_df['team_id'] == selected_team_id]
             
             if team_stats_row.empty:
@@ -466,25 +467,19 @@ with attack_tab:
             else:
                 team_stats = team_stats_row.iloc[0].to_dict()
                 
-                # Oblicz średnie ligowe i percentyle
+                # Calculate league averages and percentiles
                 league_avg, percentiles = calculate_league_stats_and_percentiles(
                     all_teams_df, 
                     team_stats
                 )
                 
-                # ADJUSTED: Closer columns [1.2, 1] instead of [2, 1]
+                # Layout with radar and stats table
                 col1, col2 = st.columns([1.2, 1])
                 
                 with col1:
                     st.markdown("### Attack Radar")
-                    
-                    # Import mplsoccer
-                    from mplsoccer import Radar
-                    import matplotlib.pyplot as plt
-                    import numpy as np
-                    import warnings
-                    
-                    # Definicja metryk - REPLACED corners with touches_in_box
+            
+                    # Metric configuration
                     metric_config = [
                         ('goals_per_game', 'Goals/Game'),
                         ('xg_per_game', 'xG/Game'),
@@ -506,8 +501,7 @@ with attack_tab:
                     high = []
                     for metric in metrics:
                         metric_values = all_teams_df[metric].dropna()
-                        low.append(0)  # Always start from 0
-                        # FIX: Add small epsilon to avoid division by zero
+                        low.append(0) 
                         high_val = float(metric_values.quantile(0.95))
                         high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
                     
@@ -516,12 +510,12 @@ with attack_tab:
                         params=labels,
                         min_range=low,
                         max_range=high,
-                        num_rings=4,  # 4 concentric circles
+                        num_rings=4, 
                         ring_width=1,
-                        center_circle_radius=0  # No central circle
+                        center_circle_radius=0
                     )
                     
-                    # Create figure - 40% LARGER (5.23x5.23 instead of 3.74x3.74) with HIGH DPI
+                    # Create figure
                     fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
                     
                     # Setup radar axis
@@ -540,7 +534,7 @@ with attack_tab:
                             alpha=0.4
                         )
                         
-                        # DRAW LEAGUE AVERAGE FIRST (as background/baseline) - NO MARKERS
+                        # League Average (as background/baseline)
                         league_output = radar.draw_radar_compare(
                             league_values,
                             team_values,
@@ -555,14 +549,13 @@ with attack_tab:
                     # Calculate percentiles for team performance
                     team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
                     
-                    # Add VERY SMALL markers for TEAM only
+                    # Markers for team radar
                     for vertex, pct in zip(vertices2, team_percentiles):
-                        # Yellow for strong (>60th), darker gold for moderate
                         color = '#fbbf24' if pct >= 60 else '#f59e0b'
                         ax.scatter(
                             vertex[0], vertex[1],
                             c=color,
-                            s=35,  # Very small markers
+                            s=35,
                             edgecolors='white',
                             linewidths=1.5,
                             zorder=5,
@@ -573,7 +566,7 @@ with attack_tab:
                     range_labels = radar.draw_range_labels(
                         ax=ax,
                         fontsize=6,
-                        color='#64748b',
+                        color="#8b6469",
                         fontweight='normal'
                     )
                     
@@ -587,7 +580,7 @@ with attack_tab:
                     
                     plt.tight_layout(pad=0.65)
                     
-                    # CENTER THE RADAR: Use container columns to center
+                    # Use container columns to center
                     radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
                     with radar_col2:
                         st.pyplot(fig, width='content')
@@ -651,7 +644,7 @@ with attack_tab:
                             format_number(safe_get(league_avg, 'corners_per_game'), 2),
                             format_number(safe_get(league_avg, 'touches_in_box_per_game'), 2)
                         ],
-                        'Pct': [
+                        'Percentile': [
                             f"{int(percentiles.get('goals_per_game', 0))}%" if percentiles.get('goals_per_game') else '-',
                             f"{int(percentiles.get('total_goals', 0))}%" if percentiles.get('total_goals') else '-',
                             f"{int(percentiles.get('xg_per_game', 0))}%" if percentiles.get('xg_per_game') else '-',
@@ -671,36 +664,51 @@ with attack_tab:
                     # Convert all columns to strings to avoid Arrow serialization issues
                     attack_df = prepare_dataframe_for_display(attack_df)
                     
-                    # Stylizacja
-                    def highlight_percentile(row):
+                    # Style DataFrame to highlight percentile column
+                    def style_table(row):
                         colors = [''] * len(row)
-                        pct_str = row['Pct']
                         
-                        if pct_str == '-':
-                            return colors
-                        
+                        # Compare Team vs League and apply color + bold to Team column (index 1)
                         try:
-                            pct_val = int(pct_str.replace('%', ''))
+                            team_val_str = row['Team']
+                            league_val_str = row['League']
                             
-                            if pct_val >= 75:
-                                colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                            elif pct_val >= 50:
-                                colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                            elif pct_val >= 25:
-                                colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                            # Remove any formatting and convert to float for comparison
+                            team_val = float(team_val_str.replace(',', '').replace('-', '0'))
+                            league_val = float(league_val_str.replace(',', '').replace('-', '0'))
+                            
+                            if team_val > league_val:
+                                colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
+                            elif team_val < league_val:
+                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
                             else:
-                                colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                                colors[1] = 'font-weight: bold'  # Just bold if equal
                         except:
-                            pass
+                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
+                        
+                        # Color code the Percentile column (index -1)
+                        pct_str = row['Percentile']
+                        if pct_str != '-':
+                            try:
+                                pct_val = int(pct_str.replace('%', ''))
+                                
+                                if pct_val >= 75:
+                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
+                                elif pct_val >= 50:
+                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
+                                elif pct_val >= 25:
+                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                                else:
+                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                            except:
+                                pass
                         
                         return colors
                     
-                    styled_df = attack_df.style.apply(highlight_percentile, axis=1)
+                    styled_df = attack_df.style.apply(style_table, axis=1)
                     st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
                     
-                    st.caption("💡 **Pct** = Percentile (% teams with worse stats)")
-        else:
-            st.warning("No attack statistics available for this season.")
+                    st.caption("💡 **Percentile** = % teams with worse stats")
             
     except Exception as e:
         logger.error(f"Error loading attack stats: {e}")
@@ -740,91 +748,133 @@ with defense_tab:
                     team_stats
                 )
                 
-                col1, col2 = st.columns([3, 2])
+                # Layout with radar and stats table
+                col1, col2 = st.columns([1.2, 1])
                 
                 with col1:
                     st.markdown("### Defense Radar")
-                    
+            
+                    # Metric configuration
                     metric_config = [
                         ('tackles_per_game', 'Tackles/Game'),
                         ('interceptions_per_game', 'Interceptions/Game'),
                         ('clearances_per_game', 'Clearances/Game'),
                         ('blocked_shots_per_game', 'Blocked Shots/Game'),
                         ('ball_recoveries_per_game', 'Ball Recoveries/Game'),
-                        ('clean_sheet_pct', 'Clean Sheet %')
+                        ('clean_sheet_pct', 'Clean Sheet %'),
                     ]
                     
                     metrics = [m[0] for m in metric_config]
                     labels = [m[1] for m in metric_config]
                     
-                    scales = calculate_radar_scales(all_teams_df, metrics, padding_pct=0.15)
-                    
+                    # Get actual values
                     team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
                     league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
                     
-                    team_normalized = normalize_for_radar(team_values, scales, metrics)
-                    league_normalized = normalize_for_radar(league_values, scales, metrics)
+                    # Calculate min/max boundaries for radar (0 to 95th percentile)
+                    low = []
+                    high = []
+                    for metric in metrics:
+                        metric_values = all_teams_df[metric].dropna()
+                        low.append(0) 
+                        high_val = float(metric_values.quantile(0.95))
+                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
                     
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=team_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name=team_name,
-                        line_color='#ef4444',
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in team_values]
-                    ))
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=league_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name='League Average',
-                        line_color='#9ca3af',
-                        opacity=0.5,
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in league_values]
-                    ))
-                    
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 1],
-                                showticklabels=False
-                            )
-                        ),
-                        showlegend=False,
-                        height=500
+                    # Initialize Radar
+                    radar = Radar(
+                        params=labels,
+                        min_range=low,
+                        max_range=high,
+                        num_rings=4, 
+                        ring_width=1,
+                        center_circle_radius=0
                     )
                     
-                    st.plotly_chart(fig, width='stretch')
-
-                    # Legend
+                    # Create figure
+                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
+                    
+                    # Setup radar axis
+                    radar.setup_axis(ax=ax, facecolor='white')
+                    
+                    # Suppress matplotlib warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=RuntimeWarning)
+                        
+                        # Draw concentric circles (baseline rings)
+                        rings_inner = radar.draw_circles(
+                            ax=ax, 
+                            facecolor='#f3f4f6',  # Light gray
+                            edgecolor='#d1d5db',  # Medium gray border
+                            lw=1.8,
+                            alpha=0.4
+                        )
+                        
+                        # League Average (as background/baseline) and Team Performance
+                        league_output = radar.draw_radar_compare(
+                            league_values,
+                            team_values,
+                            ax=ax,
+                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
+                            kwargs_compare={'facecolor': '#ef4444', 'alpha': 0.5, 'edgecolor': '#dc2626', 'linewidth': 3.6}
+                        )
+                    
+                    # Get vertices for markers
+                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
+                    
+                    # Calculate percentiles for team performance
+                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
+                    
+                    # Markers for team radar
+                    for vertex, pct in zip(vertices2, team_percentiles):
+                        color = '#ef4444' if pct >= 60 else '#dc2626'
+                        ax.scatter(
+                            vertex[0], vertex[1],
+                            c=color,
+                            s=35,
+                            edgecolors='white',
+                            linewidths=1.5,
+                            zorder=5,
+                            marker='o'
+                        )
+                    
+                    # Draw range labels (scale values)
+                    range_labels = radar.draw_range_labels(
+                        ax=ax,
+                        fontsize=6,
+                        color="#8b6469",
+                        fontweight='normal'
+                    )
+                    
+                    # Draw parameter labels (metric names)
+                    param_labels = radar.draw_param_labels(
+                        ax=ax,
+                        fontsize=9.5,
+                        color='#0f172a',
+                        fontweight='bold'
+                    )
+                    
+                    plt.tight_layout(pad=0.65)
+                    
+                    # Use container columns to center
+                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                    with radar_col2:
+                        st.pyplot(fig, width='content')
+                    
+                    plt.close()
+                    
+                    # Performance legend - centered
                     st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #ef4444; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #ef4444; margin-right: 5px; border-radius: 2px;"></div>
                             <span>{team_name}</span>
                         </div>
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
                             <span>League Average</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                    st.write("")
-                    st.write("")
-
-                    st.caption("**Scales for each metric:**")
-                    scale_text = " | ".join([
-                        f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
-                        for i in range(len(metrics))
-                    ])
-                    st.caption(scale_text)
                 
                 with col2:
                     st.markdown("### Defense Statistics")
@@ -833,6 +883,10 @@ with defense_tab:
                         'Metric': [
                             'Goals Conceded/Game',
                             'Total Goals Conceded',
+                            'xGA/Game',
+                            'Total xGA',
+                            'xGA Difference',
+                            'xGA Difference/Game',
                             'Clean Sheets',
                             'Clean Sheet %',
                             'Tackles/Game',
@@ -848,6 +902,10 @@ with defense_tab:
                         'Team': [
                             format_number(safe_get(team_stats, 'goals_conceded_per_game'), 2),
                             format_number(safe_get(team_stats, 'total_goals_conceded'), 0),
+                            format_number(safe_get(team_stats, 'xga_per_game'), 2),
+                            format_number(safe_get(team_stats, 'total_xga'), 2),
+                            format_number(safe_get(team_stats, 'xga_difference'), 2),
+                            format_number(safe_get(team_stats, 'xga_difference_per_game'), 2),
                             format_number(safe_get(team_stats, 'clean_sheets'), 0),
                             format_percentage(safe_get(team_stats, 'clean_sheet_pct')),
                             format_number(safe_get(team_stats, 'tackles_per_game'), 2),
@@ -863,6 +921,10 @@ with defense_tab:
                         'League': [
                             format_number(safe_get(league_avg, 'goals_conceded_per_game'), 2),
                             format_number(safe_get(league_avg, 'total_goals_conceded'), 1),
+                            format_number(safe_get(league_avg, 'xga_per_game'), 2),
+                            format_number(safe_get(league_avg, 'total_xga'), 2),
+                            format_number(safe_get(league_avg, 'xga_difference'), 2),
+                            format_number(safe_get(league_avg, 'xga_difference_per_game'), 2),
                             format_number(safe_get(league_avg, 'clean_sheets'), 1),
                             format_percentage(safe_get(league_avg, 'clean_sheet_pct')),
                             format_number(safe_get(league_avg, 'tackles_per_game'), 2),
@@ -875,10 +937,15 @@ with defense_tab:
                             format_percentage(safe_get(league_avg, 'avg_ground_duels_pct')),
                             format_number(safe_get(league_avg, 'saves_per_game'), 2)
                         ],
-                        'Pct': [
+                        'Percentile': [
                             # Goals conceded - lower is better, so invert percentile
                             f"{int(100 - percentiles.get('goals_conceded_per_game', 100))}%" if percentiles.get('goals_conceded_per_game') else '-',
                             f"{int(100 - percentiles.get('total_goals_conceded', 100))}%" if percentiles.get('total_goals_conceded') else '-',
+                            # xGA - lower is better, so invert percentile
+                            f"{int(100 - percentiles.get('xga_per_game', 100))}%" if percentiles.get('xga_per_game') else '-',
+                            f"{int(100 - percentiles.get('total_xga', 100))}%" if percentiles.get('total_xga') else '-',
+                            f"{int(percentiles.get('xga_difference', 0))}%" if percentiles.get('xga_difference') else '-',
+                            f"{int(percentiles.get('xga_difference_per_game', 0))}%" if percentiles.get('xga_difference_per_game') else '-',
                             f"{int(percentiles.get('clean_sheets', 0))}%" if percentiles.get('clean_sheets') else '-',
                             f"{int(percentiles.get('clean_sheet_pct', 0))}%" if percentiles.get('clean_sheet_pct') else '-',
                             f"{int(percentiles.get('tackles_per_game', 0))}%" if percentiles.get('tackles_per_game') else '-',
@@ -894,35 +961,78 @@ with defense_tab:
                     }
                     
                     defense_df = pd.DataFrame(defense_data)
+                    
+                    # Convert all columns to strings to avoid Arrow serialization issues
                     defense_df = prepare_dataframe_for_display(defense_df)
                     
-                    def highlight_percentile(row):
+                    # Style DataFrame to highlight percentile column
+                    def style_table(row):
                         colors = [''] * len(row)
-                        pct_str = row['Pct']
                         
-                        if pct_str == '-':
-                            return colors
+                        # Get metric name to determine if lower is better
+                        metric = row['Metric']
                         
+                        # Metrics where LOWER is better (invert color logic)
+                        lower_is_better = [
+                            'Goals Conceded/Game', 
+                            'Total Goals Conceded',
+                            'xGA/Game',
+                            'Total xGA',
+                            'xGA Difference',
+                            'xGA Difference/Game'
+                        ]
+                        
+                        # Compare Team vs League and apply color + bold to Team column (index 1)
                         try:
-                            pct_val = int(pct_str.replace('%', ''))
+                            team_val_str = row['Team']
+                            league_val_str = row['League']
                             
-                            if pct_val >= 75:
-                                colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                            elif pct_val >= 50:
-                                colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                            elif pct_val >= 25:
-                                colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                            # Remove any formatting and convert to float for comparison
+                            team_val = float(team_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+                            league_val = float(league_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+                            
+                            if metric in lower_is_better:
+                                # For defensive metrics where lower is better
+                                if team_val < league_val:
+                                    colors[1] = 'color: #178800; font-weight: bold'  # Green for below average (better)
+                                elif team_val > league_val:
+                                    colors[1] = 'color: #d3001c; font-weight: bold'  # Red for above average (worse)
+                                else:
+                                    colors[1] = 'font-weight: bold'  # Just bold if equal
                             else:
-                                colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                                # For other metrics where higher is better
+                                if team_val > league_val:
+                                    colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
+                                elif team_val < league_val:
+                                    colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
+                                else:
+                                    colors[1] = 'font-weight: bold'  # Just bold if equal
                         except:
-                            pass
+                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
+                        
+                        # Color code the Percentile column (index -1)
+                        pct_str = row['Percentile']
+                        if pct_str != '-':
+                            try:
+                                pct_val = int(pct_str.replace('%', ''))
+                                
+                                if pct_val >= 75:
+                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
+                                elif pct_val >= 50:
+                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
+                                elif pct_val >= 25:
+                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                                else:
+                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                            except:
+                                pass
                         
                         return colors
                     
-                    styled_df = defense_df.style.apply(highlight_percentile, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=495, hide_index=True)
+                    styled_df = defense_df.style.apply(style_table, axis=1)
+                    st.dataframe(styled_df, width='stretch', height=625, hide_index=True)
                     
-                    st.caption("💡 **Pct** = Percentile (% teams with worse stats)")
+                    st.caption("💡 **Percentile** = % teams with worse stats")
         else:
             st.warning("No defense statistics available for this season.")
     
@@ -963,91 +1073,133 @@ with possession_tab:
                     team_stats
                 )
                 
-                col1, col2 = st.columns([3, 2])
+                # Layout with radar and stats table
+                col1, col2 = st.columns([1.2, 1])
                 
                 with col1:
                     st.markdown("### Possession Radar")
-                    
+            
+                    # Metric configuration
                     metric_config = [
                         ('avg_possession_pct', 'Possession %'),
                         ('pass_accuracy_pct', 'Pass Accuracy %'),
                         ('accurate_passes_per_game', 'Accurate Passes/Game'),
                         ('accurate_long_balls_per_game', 'Long Balls/Game'),
                         ('final_third_entries_per_game', 'Final Third Entries/Game'),
-                        ('touches_in_box_per_game', 'Touches in Box/Game')
+                        ('touches_in_box_per_game', 'Touches In Box/Game'),
                     ]
                     
                     metrics = [m[0] for m in metric_config]
                     labels = [m[1] for m in metric_config]
                     
-                    scales = calculate_radar_scales(all_teams_df, metrics, padding_pct=0.15)
-                    
+                    # Get actual values
                     team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
                     league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
                     
-                    team_normalized = normalize_for_radar(team_values, scales, metrics)
-                    league_normalized = normalize_for_radar(league_values, scales, metrics)
+                    # Calculate min/max boundaries for radar (0 to 95th percentile)
+                    low = []
+                    high = []
+                    for metric in metrics:
+                        metric_values = all_teams_df[metric].dropna()
+                        low.append(0) 
+                        high_val = float(metric_values.quantile(0.95))
+                        high.append(max(high_val, 0.01))  # Ensure minimum value to prevent division by zero
                     
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=team_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name=team_name,
-                        line_color='#8b5cf6',
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in team_values]
-                    ))
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=league_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name='League Average',
-                        line_color='#9ca3af',
-                        opacity=0.5,
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in league_values]
-                    ))
-                    
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 1],
-                                showticklabels=False
-                            )
-                        ),
-                        showlegend=False,
-                        height=500
+                    # Initialize Radar
+                    radar = Radar(
+                        params=labels,
+                        min_range=low,
+                        max_range=high,
+                        num_rings=4, 
+                        ring_width=1,
+                        center_circle_radius=0
                     )
                     
-                    st.plotly_chart(fig, width='stretch')
-
-                    # Legend
+                    # Create figure
+                    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
+                    
+                    # Setup radar axis
+                    radar.setup_axis(ax=ax, facecolor='white')
+                    
+                    # Suppress matplotlib warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('ignore', category=RuntimeWarning)
+                        
+                        # Draw concentric circles (baseline rings)
+                        rings_inner = radar.draw_circles(
+                            ax=ax, 
+                            facecolor='#f3f4f6',  # Light gray
+                            edgecolor='#d1d5db',  # Medium gray border
+                            lw=1.8,
+                            alpha=0.4
+                        )
+                        
+                        # League Average (as background/baseline) and Team Performance
+                        league_output = radar.draw_radar_compare(
+                            league_values,
+                            team_values,
+                            ax=ax,
+                            kwargs_radar={'facecolor': '#9ca3af', 'alpha': 0.25, 'edgecolor': '#6b7280', 'linewidth': 2.4},
+                            kwargs_compare={'facecolor': '#8b5cf6', 'alpha': 0.5, 'edgecolor': '#7c3aed', 'linewidth': 3.6}
+                        )
+                    
+                    # Get vertices for markers
+                    radar_poly1, radar_poly2, vertices1, vertices2 = league_output
+                    
+                    # Calculate percentiles for team performance
+                    team_percentiles = [float(safe_get(percentiles, m, 50)) for m in metrics]
+                    
+                    # Markers for team radar
+                    for vertex, pct in zip(vertices2, team_percentiles):
+                        color = '#8b5cf6' if pct >= 60 else '#7c3aed'
+                        ax.scatter(
+                            vertex[0], vertex[1],
+                            c=color,
+                            s=35,
+                            edgecolors='white',
+                            linewidths=1.5,
+                            zorder=5,
+                            marker='o'
+                        )
+                    
+                    # Draw range labels (scale values)
+                    range_labels = radar.draw_range_labels(
+                        ax=ax,
+                        fontsize=6,
+                        color="#8b6469",
+                        fontweight='normal'
+                    )
+                    
+                    # Draw parameter labels (metric names)
+                    param_labels = radar.draw_param_labels(
+                        ax=ax,
+                        fontsize=9.5,
+                        color='#0f172a',
+                        fontweight='bold'
+                    )
+                    
+                    plt.tight_layout(pad=0.65)
+                    
+                    # Use container columns to center
+                    radar_col1, radar_col2, radar_col3 = st.columns([0.3, 1, 0.3])
+                    with radar_col2:
+                        st.pyplot(fig, width='content')
+                    
+                    plt.close()
+                    
+                    # Performance legend - centered
                     st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
+                    <div style="display: flex; justify-content: center; gap: 15px; margin-top: 8px; font-size: 11px;">
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #8b5cf6; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #8b5cf6; margin-right: 5px; border-radius: 2px;"></div>
                             <span>{team_name}</span>
                         </div>
                         <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
+                            <div style="width: 14px; height: 14px; background-color: #9ca3af; margin-right: 5px; border-radius: 2px;"></div>
                             <span>League Average</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                    st.write("")
-                    st.write("")
-
-                    st.caption("**Scales for each metric:**")
-                    scale_text = " | ".join([
-                        f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
-                        for i in range(len(metrics))
-                    ])
-                    st.caption(scale_text)
                 
                 with col2:
                     st.markdown("### Possession Statistics")
@@ -1092,7 +1244,7 @@ with possession_tab:
                             format_number(safe_get(league_avg, 'total_accurate_passes'), 1),
                             format_number(safe_get(league_avg, 'total_passes'), 1)
                         ],
-                        'Pct': [
+                        'Percentile': [
                             f"{int(percentiles.get('avg_possession_pct', 0))}%" if percentiles.get('avg_possession_pct') else '-',
                             f"{int(percentiles.get('pass_accuracy_pct', 0))}%" if percentiles.get('pass_accuracy_pct') else '-',
                             f"{int(percentiles.get('total_passes_per_game', 0))}%" if percentiles.get('total_passes_per_game') else '-',
@@ -1109,35 +1261,55 @@ with possession_tab:
                     }
                     
                     possession_df = pd.DataFrame(possession_data)
+                    
+                    # Convert all columns to strings to avoid Arrow serialization issues
                     possession_df = prepare_dataframe_for_display(possession_df)
                     
-                    def highlight_percentile(row):
+                    # Style DataFrame to highlight percentile column
+                    def style_table(row):
                         colors = [''] * len(row)
-                        pct_str = row['Pct']
                         
-                        if pct_str == '-':
-                            return colors
-                        
+                        # Compare Team vs League and apply color + bold to Team column (index 1)
                         try:
-                            pct_val = int(pct_str.replace('%', ''))
+                            team_val_str = row['Team']
+                            league_val_str = row['League']
                             
-                            if pct_val >= 75:
-                                colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                            elif pct_val >= 50:
-                                colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                            elif pct_val >= 25:
-                                colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                            # Remove any formatting and convert to float for comparison
+                            team_val = float(team_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+                            league_val = float(league_val_str.replace(',', '').replace('-', '0').replace('%', ''))
+                            
+                            if team_val > league_val:
+                                colors[1] = 'color: #178800; font-weight: bold'  # Green for above average
+                            elif team_val < league_val:
+                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for below average
                             else:
-                                colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                                colors[1] = 'font-weight: bold'  # Just bold if equal
                         except:
-                            pass
+                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
+                        
+                        # Color code the Percentile column (index -1)
+                        pct_str = row['Percentile']
+                        if pct_str != '-':
+                            try:
+                                pct_val = int(pct_str.replace('%', ''))
+                                
+                                if pct_val >= 75:
+                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
+                                elif pct_val >= 50:
+                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
+                                elif pct_val >= 25:
+                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                                else:
+                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                            except:
+                                pass
                         
                         return colors
                     
-                    styled_df = possession_df.style.apply(highlight_percentile, axis=1)
-                    st.dataframe(styled_df, width='stretch', height=425,hide_index=True)
+                    styled_df = possession_df.style.apply(style_table, axis=1)
+                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
                     
-                    st.caption("💡 **Pct** = Percentile (% teams with worse stats)")
+                    st.caption("💡 **Percentile** = % teams with worse stats")
         else:
             st.warning("No possession statistics available for this season.")
     
@@ -1178,99 +1350,10 @@ with discipline_tab:
                     team_stats
                 )
                 
-                col1, col2 = st.columns([3, 2])
+                # Layout with radar and stats table
+                col1= st.columns([1])
                 
-                with col1:
-                    st.markdown("### Discipline Radar")
-                    
-                    # For discipline - lower values are better, so we'll invert for visualization
-                    metric_config = [
-                        ('yellow_cards_per_game', 'Yellow Cards/Game'),
-                        ('total_red_cards', 'Red Cards'),
-                        ('fouls_per_game', 'Fouls/Game'),
-                        ('offsides_per_game', 'Offsides/Game'),
-                        ('total_fouls', 'Total Fouls'),
-                        ('total_offsides', 'Total Offsides')
-                    ]
-                    
-                    metrics = [m[0] for m in metric_config]
-                    labels = [m[1] for m in metric_config]
-                    
-                    scales = calculate_radar_scales(all_teams_df, metrics, padding_pct=0.15)
-                    
-                    team_values = [float(safe_get(team_stats, m, 0)) for m in metrics]
-                    league_values = [float(safe_get(league_avg, m, 0)) for m in metrics]
-                    
-                    # For discipline metrics, invert normalization (lower is better)
-                    # We'll normalize but then invert the values for display
-                    team_normalized_raw = normalize_for_radar(team_values, scales, metrics)
-                    league_normalized_raw = normalize_for_radar(league_values, scales, metrics)
-                    
-                    # Invert: good discipline = high on radar
-                    team_normalized = [1 - v for v in team_normalized_raw]
-                    league_normalized = [1 - v for v in league_normalized_raw]
-                    
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=team_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name=team_name,
-                        line_color='#f59e0b',
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in team_values]
-                    ))
-                    
-                    fig.add_trace(go.Scatterpolar(
-                        r=league_normalized,
-                        theta=labels,
-                        fill='toself',
-                        name='League Average',
-                        line_color='#9ca3af',
-                        opacity=0.5,
-                        hovertemplate='<b>%{theta}</b><br>Value: %{customdata}<extra></extra>',
-                        customdata=[f"{v:.2f}" for v in league_values]
-                    ))
-                    
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 1],
-                                showticklabels=False
-                            )
-                        ),
-                        showlegend=False,
-                        height=500
-                    )
-                    
-                    st.plotly_chart(fig, width='stretch')
-                       # Legend
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 0px; font-size: 14px;">
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #f59e0b; margin-right: 5px; border-radius: 3px;"></div>
-                            <span>{team_name}</span>
-                        </div>
-                        <div style="display: flex; align-items: center;">
-                            <div style="width: 20px; height: 20px; background-color: #9ca3af; margin-right: 5px; border-radius: 3px;"></div>
-                            <span>League Average</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    st.write("")
-                    st.write("")
-                    
-                    st.caption("**Scales for each metric (lower values = better discipline):**")
-                    scale_text = " | ".join([
-                        f"{labels[i]}: {scales[metrics[i]][0]:.1f}-{scales[metrics[i]][1]:.1f}"
-                        for i in range(len(metrics))
-                    ])
-                    st.caption(scale_text)
-                
-                with col2:
+                with col1[0]:
                     st.markdown("### Discipline Statistics")
                     
                     discipline_data = {
@@ -1307,7 +1390,7 @@ with discipline_tab:
                             format_number(safe_get(league_avg, 'free_kicks_per_game'), 2),
                             format_number(safe_get(league_avg, 'total_free_kicks'), 1)
                         ],
-                        'Pct': [
+                        'Percentile': [
                             # For discipline - lower is better, so invert
                             f"{int(100 - percentiles.get('yellow_cards_per_game', 100))}%" if percentiles.get('yellow_cards_per_game') else '-',
                             f"{int(100 - percentiles.get('total_yellow_cards', 100))}%" if percentiles.get('total_yellow_cards') else '-',
@@ -1322,38 +1405,58 @@ with discipline_tab:
                     }
                     
                     discipline_df = pd.DataFrame(discipline_data)
+                    
+                    # Convert all columns to strings to avoid Arrow serialization issues
                     discipline_df = prepare_dataframe_for_display(discipline_df)
                     
-                    def highlight_percentile(row):
+                    # Style DataFrame to highlight percentile column
+                    def style_table(row):
                         colors = [''] * len(row)
-                        pct_str = row['Pct']
                         
-                        if pct_str == '-':
-                            return colors
-                        
+                        # Compare Team vs League - For discipline, LOWER is better
                         try:
-                            pct_val = int(pct_str.replace('%', ''))
+                            team_val_str = row['Team']
+                            league_val_str = row['League']
                             
-                            if pct_val >= 75:
-                                colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
-                            elif pct_val >= 50:
-                                colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
-                            elif pct_val >= 25:
-                                colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                            # Remove any formatting and convert to float for comparison
+                            team_val = float(team_val_str.replace(',', '').replace('-', '0'))
+                            league_val = float(league_val_str.replace(',', '').replace('-', '0'))
+                            
+                            # Inverted: lower is better for discipline
+                            if team_val < league_val:
+                                colors[1] = 'color: #178800; font-weight: bold'  # Green for better discipline
+                            elif team_val > league_val:
+                                colors[1] = 'color: #d3001c; font-weight: bold'  # Red for worse discipline
                             else:
-                                colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                                colors[1] = 'font-weight: bold'  # Just bold if equal
                         except:
-                            pass
+                            colors[1] = 'font-weight: bold'  # Default to just bold if comparison fails
+                        
+                        # Color code the Percentile column (index -1)
+                        pct_str = row['Percentile']
+                        if pct_str != '-':
+                            try:
+                                pct_val = int(pct_str.replace('%', ''))
+                                
+                                if pct_val >= 75:
+                                    colors[-1] = 'background-color: #dcfce7; color: #166534; font-weight: bold'
+                                elif pct_val >= 50:
+                                    colors[-1] = 'background-color: #fef3c7; color: #854d0e; font-weight: bold'
+                                elif pct_val >= 25:
+                                    colors[-1] = 'background-color: #fed7aa; color: #9a3412; font-weight: bold'
+                                else:
+                                    colors[-1] = 'background-color: #fee2e2; color: #991b1b; font-weight: bold'
+                            except:
+                                pass
                         
                         return colors
                     
-                    styled_df = discipline_df.style.apply(highlight_percentile, axis=1)
-                    st.dataframe(styled_df, width='stretch', hide_index=True)
+                    styled_df = discipline_df.style.apply(style_table, axis=1)
+                    st.dataframe(styled_df, width='stretch', height=425, hide_index=True)
                     
-                    st.caption("💡 **Pct** = Percentile (% teams with better discipline - lower values are better)")
+                    st.caption("💡 **Percentile** = % teams with better discipline (lower values are better)")
                     
                     # Fair Play Score
-                    st.markdown("---")
                     st.markdown("### Fair Play Rating")
                     
                     total_yellows = safe_get(team_stats, 'total_yellow_cards', 0)
