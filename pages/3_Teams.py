@@ -9,10 +9,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import Optional, Dict, Any
 import logging
-import math
 import matplotlib.pyplot as plt
 from mplsoccer import Radar
-from matplotlib import font_manager
 import warnings
 
 
@@ -72,7 +70,12 @@ def safe_get(data: Optional[Dict[str, Any]], key: str, default: Any = 0) -> Any:
     """Safely get value from dict, handling None and missing keys."""
     if data is None:
         return default
-    return data.get(key, default)
+    value = data.get(key, default)
+    # Return default if value is None (critical fix)
+    if value is None:
+        return default
+    return value
+
 
 def format_percentage(value: Optional[float]) -> str:
     """Format float as percentage string."""
@@ -430,7 +433,8 @@ def map_league_averages(league_averages: Dict[str, Any], stat_type: str) -> Dict
 # MAIN PAGE
 # ============================================================================
 
-st.markdown("## ⚽ Team Statistics & Performance")
+st.markdown("## Team Statistics & Performance", text_alignment="center")
+st.markdown("""-----------------------------------""")
 
 # ============================================================================
 # SIDEBAR FILTERS
@@ -465,6 +469,58 @@ with st.sidebar:
         st.error("Failed to load seasons")
         st.stop()
     
+    st.markdown("---")
+
+# Load league standings for team selection
+    try:
+        standings_df = get_league_standings(selected_season_id)
+    
+        if standings_df.empty:
+            st.warning(f"No team data available for season: {selected_season_name}")
+            st.stop()
+    
+        # Add position column (rank by points, goal difference, goals for)
+        standings_df = standings_df.sort_values(
+            by=['total_points', 'goal_difference', 'goals_for'],
+            ascending=[False, False, False]
+        ).reset_index(drop=True)
+
+        standings_df['position'] = standings_df.index + 1
+
+        # Team selector
+        selected_team_id = team_selector(
+            df=standings_df,
+            label="Select Team",
+            key="teams_team_selector",
+        )
+
+        if selected_team_id is None:
+            st.warning("Please select a team to view statistics.")
+            st.stop()
+
+        # Get selected team info
+        team_filtered = standings_df[standings_df['team_id'] == selected_team_id]
+
+        if team_filtered.empty:
+            # Get the team name from session state if available
+            team_name = st.session_state.get('teams_team_selector_name', 'Selected team')
+            st.warning(f"⚠️ **{team_name}** did not play in Ekstraklasa during the **{selected_season_name}** season.")
+            st.info("👆 Please select a different team or change the season.")
+            st.stop()
+
+        team_row = team_filtered.iloc[0]
+        team_name = team_row['team_name']
+        team_position = int(team_row['position'])
+        total_teams = len(standings_df)
+        
+    except Exception as e:
+        logger.error(f"Failed to load teams: {e}")
+        st.error(f"Failed to load team data: {e}")
+        st.exception(e)
+        st.stop()
+
+    st.markdown("---")
+
     # Home/Away toggle
     location = home_away_toggle(
         label="Filter by location",
@@ -479,54 +535,7 @@ with st.sidebar:
 # TEAM SELECTOR
 # ============================================================================
 
-st.markdown("---")
 
-# Load league standings for team selection
-try:
-    standings_df = get_league_standings(selected_season_id)
-    
-    if standings_df.empty:
-        st.warning(f"No team data available for season: {selected_season_name}")
-        st.stop()
-    
-    # Add position column (rank by points, goal difference, goals for)
-    standings_df = standings_df.sort_values(
-        by=['total_points', 'goal_difference', 'goals_for'],
-        ascending=[False, False, False]
-    ).reset_index(drop=True)
-    standings_df['position'] = standings_df.index + 1
-    
-    # Team selector using existing component
-    selected_team_id = team_selector(
-        df=standings_df,
-        label="🔍 Search and select a team",
-        key="teams_team_selector"
-    )
-    
-    if selected_team_id is None:
-        st.info("👆 Please select a team to view statistics")
-        st.stop()
-    
-    # Get selected team info
-    team_filtered = standings_df[standings_df['team_id'] == selected_team_id]
-
-    if team_filtered.empty:
-        # Get the team name from session state if available
-        team_name = st.session_state.get('teams_team_selector_name', 'Selected team')
-        st.warning(f"⚠️ **{team_name}** did not play in Ekstraklasa during the **{selected_season_name}** season.")
-        st.info("👆 Please select a different team or change the season.")
-        st.stop()
-
-    team_row = team_filtered.iloc[0]
-    team_name = team_row['team_name']
-    team_position = int(team_row['position'])
-    total_teams = len(standings_df)
-        
-except Exception as e:
-    logger.error(f"Failed to load teams: {e}")
-    st.error(f"Failed to load team data: {e}")
-    st.exception(e)
-    st.stop()
 
 # ============================================================================
 # TEAM HEADER
