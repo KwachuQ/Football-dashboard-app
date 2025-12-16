@@ -10,3 +10,4 @@ pydantic>=2.12
 pydantic-settings>=2.1.0
 pyyaml>=6.0
 scipy>=1.16.3
+mplsoccer>=1.6.1

@@ -21,7 +21,8 @@ from src.models import (
     HeadToHead,
     UpcomingPredictions,
     TeamBttsAnalysis,
-    LeagueAverages
+    LeagueAverages,
+    FactMatch
 )
 from services.db import get_db
 
@@ -132,8 +133,6 @@ def get_upcoming_fixtures(
     finally:
         db.close()
 
-
-# filepath: c:\Users\lkwas\Desktop\Data_engineering\Football-dashboard-app\services\queries.py
 def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     """
     Get team form statistics for the specified number of recent matches.
@@ -186,6 +185,10 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
                 'losses_last': getattr(result, f'losses_last_{suffix}', 0),
                 'goals_for_last': getattr(result, f'goals_for_last_{suffix}', 0),
                 'goals_against_last': getattr(result, f'goals_against_last_{suffix}', 0),
+                'last_5_results_home': getattr(result, 'last_5_results_home', ''),
+                'points_last_5_home': getattr(result, 'points_last_5_home', 0),
+                'last_5_results_away': getattr(result, 'last_5_results_away', ''),
+                'points_last_5_away': getattr(result, 'points_last_5_away', 0),
             }
         
         return {}
@@ -464,11 +467,112 @@ def get_head_to_head(
             'team2_avg_goals': float(getattr(result, 'team_1_avg_goals')) if is_swapped and getattr(result, 'team_1_avg_goals') is not None else (float(getattr(result, 'team_2_avg_goals')) if getattr(result, 'team_2_avg_goals') is not None else None),
             'last_meeting_date': result.last_meeting_date,
             'last_5_results': result.last_5_results,
+            'over_15_pct': float(getattr(result, 'over_15_pct')) if getattr(result, 'over_15_pct') is not None else 0.0,
+            'over_25_pct': float(getattr(result, 'over_25_pct')) if getattr(result, 'over_25_pct') is not None else 0.0,
+            'over_35_pct': float(getattr(result, 'over_35_pct')) if getattr(result, 'over_35_pct') is not None else 0.0,
+            'btts_pct': float(getattr(result, 'btts_pct')) if getattr(result, 'btts_pct') is not None else 0.0,
         }
     finally:
         db.close()
 
-
+def get_h2h_results(
+    team_id_1: int,
+    team_id_2: int,
+    limit: int = 5
+) -> pd.DataFrame:
+    """
+    Get actual head-to-head match results between two teams from fact_match table.
+    Finds all matches where these two teams played each other, regardless of home/away.
+    
+    Args:
+        team_id_1: First team identifier (from upcoming match, typically home team)
+        team_id_2: Second team identifier (from upcoming match, typically away team)
+        limit: Number of most recent matches to return (default: 5)
+    
+    Returns:
+        DataFrame with match details as they actually occurred, ordered by most recent first
+    """
+    db = next(get_db())
+    try:
+        # Query for ALL matches where these two teams played against each other
+        # This includes:
+        # - team_id_1 was home, team_id_2 was away
+        # - team_id_1 was away, team_id_2 was home
+        query = select(
+            FactMatch.match_id,
+            FactMatch.match_date,
+            FactMatch.start_timestamp,
+            FactMatch.home_team_id,
+            FactMatch.home_team_name,
+            FactMatch.away_team_id,
+            FactMatch.away_team_name,
+            FactMatch.home_score,
+            FactMatch.away_score,
+            FactMatch.home_score_period1,
+            FactMatch.away_score_period1,
+            FactMatch.winner_code,
+            FactMatch.status_type,
+            FactMatch.tournament_name,
+            FactMatch.season_name
+        ).where(
+            and_(
+                or_(
+                    # Case 1: team_id_1 home, team_id_2 away
+                    and_(
+                        FactMatch.home_team_id == team_id_1,
+                        FactMatch.away_team_id == team_id_2
+                    ),
+                    # Case 2: team_id_2 home, team_id_1 away
+                    and_(
+                        FactMatch.home_team_id == team_id_2,
+                        FactMatch.away_team_id == team_id_1
+                    )
+                ),
+                FactMatch.status_type == 'finished',  # Only completed matches
+                FactMatch.home_score.isnot(None),  # Has score data
+                FactMatch.away_score.isnot(None)
+            )
+        ).order_by(
+            desc(FactMatch.start_timestamp)  # Most recent first
+        ).limit(limit)
+        
+        result = db.execute(query).all()
+        
+        if not result:
+            return pd.DataFrame()
+        
+        # Convert to DataFrame - keep matches as they actually occurred
+        data = []
+        for r in result:
+            row = {
+                'match_id': r.match_id,
+                'match_date': r.match_date,
+                'start_timestamp': r.start_timestamp,
+                'home_team_id': r.home_team_id,
+                'home_team': r.home_team_name,
+                'away_team_id': r.away_team_id,
+                'away_team': r.away_team_name,
+                'home_score': r.home_score,
+                'away_score': r.away_score,
+                'home_score_ht': r.home_score_period1,
+                'away_score_ht': r.away_score_period1,
+                'result': f"{r.home_score}-{r.away_score}",
+                'full_result': f"{r.home_team_name} {r.home_score}-{r.away_score} {r.away_team_name}",
+                'tournament': r.tournament_name,
+                'season': r.season_name,
+                'winner_code': r.winner_code
+            }
+            data.append(row)
+        
+        return pd.DataFrame(data)
+    
+    except Exception as e:
+        logger.error(f"Error fetching H2H results: {e}")
+        return pd.DataFrame()
+    
+    finally:
+        db.close()
+        
 def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
     """
     Get predictions for specific matches from upcoming_predictions table.
@@ -611,12 +715,42 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
             'home_btts_pct': float(getattr(result, 'home_btts_pct')) if getattr(result, 'home_btts_pct') is not None else None,
             'home_clean_sheet_pct': float(getattr(result, 'home_clean_sheet_pct')) if getattr(result, 'home_clean_sheet_pct') is not None else None,
             'home_avg_goals': float(getattr(result, 'home_avg_goals_per_match')) if getattr(result, 'home_avg_goals_per_match') is not None else None,
+            'home_avg_scored': float(getattr(result, 'home_avg_scored')) if getattr(result, 'home_avg_scored') is not None else None,
+            'home_avg_conceded': float(getattr(result, 'home_avg_conceded')) if getattr(result, 'home_avg_conceded') is not None else None,
+            'home_avg_xg': float(getattr(result, 'home_avg_xg')) if getattr(result, 'home_avg_xg') is not None else None,
+            'home_avg_xga': float(getattr(result, 'home_avg_xga')) if getattr(result, 'home_avg_xga') is not None else None,
             # Away stats
             'away_matches': result.away_matches_played,
             'away_win_pct': float(getattr(result, 'away_win_pct')) if getattr(result, 'away_win_pct') is not None else None,
             'away_btts_pct': float(getattr(result, 'away_btts_pct')) if getattr(result, 'away_btts_pct') is not None else None,
             'away_clean_sheet_pct': float(getattr(result, 'away_clean_sheet_pct')) if getattr(result, 'away_clean_sheet_pct') is not None else None,
             'away_avg_goals': float(getattr(result, 'away_avg_goals_per_match')) if getattr(result, 'away_avg_goals_per_match') is not None else None,
+            'away_avg_conceded': float(getattr(result, 'away_avg_conceded')) if getattr(result, 'away_avg_conceded') is not None else None,
+            'away_avg_xg': float(getattr(result, 'away_avg_xg')) if getattr(result, 'away_avg_xg') is not None else None,
+            'away_avg_xga': float(getattr(result, 'away_avg_xga')) if getattr(result, 'away_avg_xga') is not None else None,
+            
+            # Scoring breakdowns
+            'home_scored_over_05_pct': float(getattr(result, 'home_scored_over_05_pct')) if getattr(result, 'home_scored_over_05_pct') is not None else 0.0,
+            'home_scored_over_15_pct': float(getattr(result, 'home_scored_over_15_pct')) if getattr(result, 'home_scored_over_15_pct') is not None else 0.0,
+            'home_scored_over_25_pct': float(getattr(result, 'home_scored_over_25_pct')) if getattr(result, 'home_scored_over_25_pct') is not None else 0.0,
+            'home_scored_over_35_pct': float(getattr(result, 'home_scored_over_35_pct')) if getattr(result, 'home_scored_over_35_pct') is not None else 0.0,
+            'home_failed_to_score_pct': float(getattr(result, 'home_failed_to_score_pct')) if getattr(result, 'home_failed_to_score_pct') is not None else 0.0,
+            
+            'away_scored_over_05_pct': float(getattr(result, 'away_scored_over_05_pct')) if getattr(result, 'away_scored_over_05_pct') is not None else 0.0,
+            'away_scored_over_15_pct': float(getattr(result, 'away_scored_over_15_pct')) if getattr(result, 'away_scored_over_15_pct') is not None else 0.0,
+            'away_scored_over_25_pct': float(getattr(result, 'away_scored_over_25_pct')) if getattr(result, 'away_scored_over_25_pct') is not None else 0.0,
+            'away_scored_over_35_pct': float(getattr(result, 'away_scored_over_35_pct')) if getattr(result, 'away_scored_over_35_pct') is not None else 0.0,
+            'away_failed_to_score_pct': float(getattr(result, 'away_failed_to_score_pct')) if getattr(result, 'away_failed_to_score_pct') is not None else 0.0,
+            
+            'home_conceded_over_05_pct': float(getattr(result, 'home_conceded_over_05_pct')) if getattr(result, 'home_conceded_over_05_pct') is not None else 0.0,
+            'home_conceded_over_15_pct': float(getattr(result, 'home_conceded_over_15_pct')) if getattr(result, 'home_conceded_over_15_pct') is not None else 0.0,
+            'home_conceded_over_25_pct': float(getattr(result, 'home_conceded_over_25_pct')) if getattr(result, 'home_conceded_over_25_pct') is not None else 0.0,
+            'home_conceded_over_35_pct': float(getattr(result, 'home_conceded_over_35_pct')) if getattr(result, 'home_conceded_over_35_pct') is not None else 0.0,
+            
+            'away_conceded_over_05_pct': float(getattr(result, 'away_conceded_over_05_pct')) if getattr(result, 'away_conceded_over_05_pct') is not None else 0.0,
+            'away_conceded_over_15_pct': float(getattr(result, 'away_conceded_over_15_pct')) if getattr(result, 'away_conceded_over_15_pct') is not None else 0.0,
+            'away_conceded_over_25_pct': float(getattr(result, 'away_conceded_over_25_pct')) if getattr(result, 'away_conceded_over_25_pct') is not None else 0.0,
+            'away_conceded_over_35_pct': float(getattr(result, 'away_conceded_over_35_pct')) if getattr(result, 'away_conceded_over_35_pct') is not None else 0.0,
         }
     finally:
         db.close()

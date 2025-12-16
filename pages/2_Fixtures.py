@@ -52,7 +52,7 @@ with st.sidebar:
     st.header("Filters")
     
     today = date.today()
-    default_end = today + timedelta(days=14)
+    default_end = today + timedelta(days=45)
     
     start_date, end_date = date_range_filter(
         key="fixtures_date_range",

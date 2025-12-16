@@ -47,3 +47,7 @@ class TeamForm(Base):
     conceded_first_count = Column(BigInteger)
     points_after_conceding_first = Column(BigInteger)
     points_pct_after_conceding_first = Column(Numeric)
+    last_5_results_home = Column(String)
+    points_last_5_home = Column(BigInteger)
+    last_5_results_away = Column(String)
+    points_last_5_away = Column(BigInteger)
