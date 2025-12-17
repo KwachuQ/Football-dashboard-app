@@ -1,99 +1,215 @@
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import QueuePool
-from typing import Generator
+# services/db.py - Fixed for Pylance + SQLAlchemy 2.0
 import os
-from dotenv import load_dotenv
+import streamlit as st
+from urllib.parse import quote_plus
+from sqlalchemy import create_engine, text, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
 from services.cache import cache_resource_singleton
 
-# Load environment variables
-load_dotenv()
+def load_database_config():
+    """Smart config loader for Streamlit Cloud vs local."""
+    
+    # PRIORITY 1: Streamlit secrets (Cloud)
+    if hasattr(st, 'secrets') and st.secrets:
+        print("🔄 Loading from Streamlit secrets (Cloud mode)")
+        config = {
+            'user': st.secrets.get('POSTGRES_USER'),
+            'password': st.secrets.get('POSTGRES_PASSWORD'),
+            'host': st.secrets.get('POSTGRES_HOST'),
+            'port': st.secrets.get('POSTGRES_PORT', '5432'),
+            'database': st.secrets.get('POSTGRES_DB'),
+            'ssl_mode': st.secrets.get('DB_SSL_MODE', 'require'),
+            'source': 'streamlit_secrets'
+        }
+    
+    # PRIORITY 2: .env file (local)
+    elif os.path.exists('.env'):
+        from dotenv import load_dotenv
+        load_dotenv()
+        config = {
+            'user': os.getenv('POSTGRES_USER'),
+            'password': os.getenv('POSTGRES_PASSWORD'),
+            'host': os.getenv('POSTGRES_HOST'),
+            'port': os.getenv('POSTGRES_PORT', '5432'),
+            'database': os.getenv('POSTGRES_DB'),
+            'ssl_mode': os.getenv('DB_SSL_MODE', 'prefer'),
+            'source': '.env_file'
+        }
+    
+    # PRIORITY 3: Local defaults (development)
+    else:
+        print("🔄 Using local development defaults")
+        config = {
+            'user': 'airflow',
+            'password': 'airflow',
+            'host': 'localhost',
+            'port': '5432',
+            'database': 'dwh',
+            'ssl_mode': 'prefer',
+            'source': 'local_defaults'
+        }
+    
+    print(f"📡 Using config source: {config['source']}")
+    return config
 
-# Database configuration
-DB_USER = os.getenv("POSTGRES_USER", "airflow")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "airflow")
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "dwh")
-
-# Connection pool settings
-POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
-MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
-POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
-
-# Build connection string
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
+def build_connection_url(config):
+    """Build SQLAlchemy connection URL."""
+    encoded_password = quote_plus(config['password'])
+    ssl_param = f"sslmode={config['ssl_mode']}"
+    return f"postgresql://{config['user']}:{encoded_password}@{config['host']}:{config['port']}/{config['database']}?{ssl_param}"
 
 @cache_resource_singleton()
 def get_engine():
-    """
-    Create and cache SQLAlchemy engine with connection pooling.
+    """Create cached SQLAlchemy engine."""
+    config = load_database_config()
+    database_url = build_connection_url(config)
     
-    This function is cached as a resource, meaning the engine is created
-    once and reused across all sessions.
+    print(f"🔌 Connecting to: {config['host']}:{config['port']}/{config['database']} as {config['user']}")
     
-    Returns:
-        SQLAlchemy Engine instance
-    """
     engine = create_engine(
-        DATABASE_URL,
+        database_url,
         poolclass=QueuePool,
-        pool_size=POOL_SIZE,
-        max_overflow=MAX_OVERFLOW,
-        pool_recycle=POOL_RECYCLE,
-        pool_pre_ping=True,  # Verify connections before using
-        echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true"
+        pool_size=int(os.getenv('DB_POOL_SIZE', 5)),
+        max_overflow=int(os.getenv('DB_MAX_OVERFLOW', 10)),
+        pool_recycle=int(os.getenv('DB_POOL_RECYCLE', 1800)),
+        pool_pre_ping=True,
+        echo=os.getenv('SQLALCHEMY_ECHO', 'false').lower() == 'true'
     )
+    
+    # Test connection with proper SQLAlchemy syntax
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT 1"))
+        _ = result.scalar()  # Execute and discard result
+        print("✅ Database connection test passed!")
+    
     return engine
 
-
-def get_session_maker():
-    """
-    Create session maker bound to the cached engine.
-    
-    Returns:
-        SQLAlchemy SessionMaker
-    """
+def get_sessionmaker():
+    """Create session maker."""
     engine = get_engine()
     return sessionmaker(bind=engine)
 
-
-def get_db() -> Generator[Session, None, None]:
-    """
-    Dependency function to get database session.
-    
-    Yields:
-        SQLAlchemy Session
-        
-    Usage:
-        db = next(get_db())
-        try:
-            # Use db
-            pass
-        finally:
-            db.close()
-    """
-    SessionLocal = get_session_maker()
+def get_db():
+    """Database session dependency."""
+    SessionLocal = get_sessionmaker()
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-
-def test_connection() -> bool:
-    """
-    Test database connection.
-    
-    Returns:
-        True if connection successful, False otherwise
-    """
+def test_connection():
+    """Test database connection."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+            result = conn.execute(text("SELECT 1"))
+            _ = result.scalar()
+        print("✅ Connection test successful")
         return True
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        print(f"❌ Connection test failed: {e}")
         return False
+
+    
+
+# from sqlalchemy import create_engine, text
+# from sqlalchemy.orm import sessionmaker, Session
+# from sqlalchemy.pool import QueuePool
+# from typing import Generator
+# import os
+# from dotenv import load_dotenv
+# from services.cache import cache_resource_singleton
+
+# # Load environment variables
+# load_dotenv()
+
+# # Database configuration
+# DB_USER = os.getenv("POSTGRES_USER", "airflow")
+# DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "airflow")
+# DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+# DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+# DB_NAME = os.getenv("POSTGRES_DB", "dwh")
+
+# # Connection pool settings
+# POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+# MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+# POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+# # Build connection string
+# DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+
+# @cache_resource_singleton()
+# def get_engine():
+#     """
+#     Create and cache SQLAlchemy engine with connection pooling.
+    
+#     This function is cached as a resource, meaning the engine is created
+#     once and reused across all sessions.
+    
+#     Returns:
+#         SQLAlchemy Engine instance
+#     """
+#     engine = create_engine(
+#         DATABASE_URL,
+#         poolclass=QueuePool,
+#         pool_size=POOL_SIZE,
+#         max_overflow=MAX_OVERFLOW,
+#         pool_recycle=POOL_RECYCLE,
+#         pool_pre_ping=True,  # Verify connections before using
+#         echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true"
+#     )
+#     return engine
+
+
+# def get_session_maker():
+#     """
+#     Create session maker bound to the cached engine.
+    
+#     Returns:
+#         SQLAlchemy SessionMaker
+#     """
+#     engine = get_engine()
+#     return sessionmaker(bind=engine)
+
+
+# def get_db() -> Generator[Session, None, None]:
+#     """
+#     Dependency function to get database session.
+    
+#     Yields:
+#         SQLAlchemy Session
+        
+#     Usage:
+#         db = next(get_db())
+#         try:
+#             # Use db
+#             pass
+#         finally:
+#             db.close()
+#     """
+#     SessionLocal = get_session_maker()
+#     db = SessionLocal()
+#     try:
+#         yield db
+#     finally:
+#         db.close()
+
+
+# def test_connection() -> bool:
+#     """
+#     Test database connection.
+    
+#     Returns:
+#         True if connection successful, False otherwise
+#     """
+#     try:
+#         engine = get_engine()
+#         with engine.connect() as conn:
+#             conn.execute(text("SELECT 1"))
+#         return True
+#     except Exception as e:
+#         print(f"Database connection failed: {e}")
+#         return False
