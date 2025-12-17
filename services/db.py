@@ -1,33 +1,30 @@
-# services/db.py - Fixed for Pylance + SQLAlchemy 2.0
+# services/db.py - FIXED for special characters + psycopg2
 import os
 import streamlit as st
-from urllib.parse import quote_plus
-from sqlalchemy import create_engine, text, select
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
+
+# Import your cache decorator
 from services.cache import cache_resource_singleton
 
 def load_database_config():
-    """Smart config loader for Streamlit Cloud vs local."""
-    
-    # PRIORITY 1: Streamlit secrets (Cloud)
+    """Smart config loader."""
     if hasattr(st, 'secrets') and st.secrets:
-        print("🔄 Loading from Streamlit secrets (Cloud mode)")
-        config = {
-            'user': st.secrets.get('POSTGRES_USER'),
-            'password': st.secrets.get('POSTGRES_PASSWORD'),
-            'host': st.secrets.get('POSTGRES_HOST'),
-            'port': st.secrets.get('POSTGRES_PORT', '5432'),
-            'database': st.secrets.get('POSTGRES_DB'),
-            'ssl_mode': st.secrets.get('DB_SSL_MODE', 'require'),
+        print("🔄 Loading from Streamlit secrets")
+        return {
+            'user': st.secrets.POSTGRES_USER,
+            'password': st.secrets.POSTGRES_PASSWORD,
+            'host': st.secrets.POSTGRES_HOST,
+            'port': st.secrets.POSTGRES_PORT or '5432',
+            'database': st.secrets.POSTGRES_DB,
+            'ssl_mode': getattr(st.secrets, 'DB_SSL_MODE', 'require'),
             'source': 'streamlit_secrets'
         }
-    
-    # PRIORITY 2: .env file (local)
     elif os.path.exists('.env'):
         from dotenv import load_dotenv
         load_dotenv()
-        config = {
+        return {
             'user': os.getenv('POSTGRES_USER'),
             'password': os.getenv('POSTGRES_PASSWORD'),
             'host': os.getenv('POSTGRES_HOST'),
@@ -36,62 +33,57 @@ def load_database_config():
             'ssl_mode': os.getenv('DB_SSL_MODE', 'prefer'),
             'source': '.env_file'
         }
-    
-    # PRIORITY 3: Local defaults (development)
     else:
-        print("🔄 Using local development defaults")
-        config = {
-            'user': 'airflow',
-            'password': 'airflow',
-            'host': 'localhost',
-            'port': '5432',
-            'database': 'dwh',
-            'ssl_mode': 'prefer',
-            'source': 'local_defaults'
+        return {
+            'user': 'airflow', 'password': 'airflow',
+            'host': 'localhost', 'port': '5432', 'database': 'dwh',
+            'ssl_mode': 'prefer', 'source': 'local_defaults'
         }
-    
-    print(f"📡 Using config source: {config['source']}")
-    return config
 
-def build_connection_url(config):
-    """Build SQLAlchemy connection URL."""
-    encoded_password = quote_plus(config['password'])
-    ssl_param = f"sslmode={config['ssl_mode']}"
-    return f"postgresql://{config['user']}:{encoded_password}@{config['host']}:{config['port']}/{config['database']}?{ssl_param}"
+def build_connection_string(config):
+    """Build psycopg2-compatible connection string."""
+    # Use psycopg2 format - handles special chars automatically
+    return (
+        f"host={config['host']} "
+        f"port={config['port']} "
+        f"dbname={config['database']} "
+        f"user={config['user']} "
+        f"password={config['password']} "
+        f"sslmode={config['ssl_mode']}"
+    )
 
+# ✅ FIXED decorator syntax
 @cache_resource_singleton()
 def get_engine():
-    """Create cached SQLAlchemy engine."""
+    """Cached SQLAlchemy engine."""
     config = load_database_config()
-    database_url = build_connection_url(config)
+    conn_string = build_connection_string(config)
     
-    print(f"🔌 Connecting to: {config['host']}:{config['port']}/{config['database']} as {config['user']}")
+    print(f"📡 Config: {config['source']}")
+    print(f"🔌 Connecting to {config['host']}:{config['port']}/{config['database']}")
     
     engine = create_engine(
-        database_url,
+        f"postgresql://{config['user']}@{config['host']}:{config['port']}/{config['database']}?sslmode={config['ssl_mode']}",
         poolclass=QueuePool,
         pool_size=int(os.getenv('DB_POOL_SIZE', 5)),
         max_overflow=int(os.getenv('DB_MAX_OVERFLOW', 10)),
         pool_recycle=int(os.getenv('DB_POOL_RECYCLE', 1800)),
-        pool_pre_ping=True,
-        echo=os.getenv('SQLALCHEMY_ECHO', 'false').lower() == 'true'
+        pool_pre_ping=True
     )
     
-    # Test connection with proper SQLAlchemy syntax
+    # Test connection
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1"))
-        _ = result.scalar()  # Execute and discard result
-        print("✅ Database connection test passed!")
+        result.scalar()
+        print("✅ Connection successful!")
     
     return engine
 
 def get_sessionmaker():
-    """Create session maker."""
     engine = get_engine()
     return sessionmaker(bind=engine)
 
 def get_db():
-    """Database session dependency."""
     SessionLocal = get_sessionmaker()
     db = SessionLocal()
     try:
@@ -100,17 +92,16 @@ def get_db():
         db.close()
 
 def test_connection():
-    """Test database connection."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute(text("SELECT 1"))
-            _ = result.scalar()
-        print("✅ Connection test successful")
+            result.scalar()
         return True
     except Exception as e:
-        print(f"❌ Connection test failed: {e}")
+        print(f"❌ Connection failed: {e}")
         return False
+
 
     
 
