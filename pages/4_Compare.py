@@ -138,6 +138,16 @@ st.markdown("""
         font-weight: 700;
         color: #111827;
     }
+            
+    .ppg-highlight {
+        border-left: 4px solid #22c55e;
+        background: #ecfdf3;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font-size: 16px;
+        color: #166534;
+        margin-bottom: 6px;
+    }        
     </style>
 """, unsafe_allow_html=True)
 
@@ -153,11 +163,11 @@ def safe_get(data: Optional[Dict[str, Any]], key: str, default: Any = 0) -> Any:
     value = data.get(key, default)
     return default if value is None else value
 
-def format_percentage(value: Optional[float]) -> str:
-    """Format float as percentage string."""
+def format_percentage(value: Optional[float], decimals: int = 1) -> str:
     if value is None:
-        return "N/A"
-    return f"{float(value):.1f}%"
+        return "NA"
+    return f"{float(value):.{decimals}f}%"
+
 
 def format_number(value: Optional[float], decimals: int = 2) -> str:
     """Format number with specified decimals."""
@@ -204,13 +214,602 @@ def format_form_html(results: list) -> str:
         )
     return html
 
+def _render_form_block(form_data: Dict[str, Any], location: str) -> None:
+    overall_results = parse_form_string(safe_get(form_data, "last_results", ""), 5)
+    overall_ppg = safe_get(form_data, "points_last", 0) / 5 if overall_results else 0
+
+    st.markdown("**Overall (Last 5)**")
+    if overall_results:
+        st.markdown(format_form_html(overall_results), unsafe_allow_html=True)
+        st.caption(f"PPG: {overall_ppg:.2f}")
+
+    st.markdown(f"**{location.capitalize()} (Last 5)**")
+    loc_key = f"last_5_results_{location}"
+    pts_key = f"points_last_5_{location}"
+    loc_results = parse_form_string(safe_get(form_data, loc_key, ""), 5)
+    loc_ppg = safe_get(form_data, pts_key, 0) / 5 if loc_results else 0
+
+    if loc_results:
+        st.markdown(format_form_html(loc_results), unsafe_allow_html=True)
+        st.caption(f"PPG: {loc_ppg:.2f}")
+    else:
+        st.info(f"No {location} form data available")
+
+def _render_stats_tabs(
+    stats: Dict[str, Any],
+    btts_data: Dict[str, Any],
+    comparison_stats: Optional[Dict[str, Any]],
+    comparison_btts: Optional[Dict[str, Any]],
+    is_home_team: bool,
+) -> None:
+    overview = stats.get("overview", {})
+    attack = stats.get("attack", {})
+    defense = stats.get("defense", {})
+
+    comp_overview = comparison_stats.get("overview") if comparison_stats else None
+    comp_attack = comparison_stats.get("attack") if comparison_stats else None
+    comp_defense = comparison_stats.get("defense") if comparison_stats else None
+
+    for tab, loc in zip(
+        st.tabs(["Overall", "Home", "Away"]),
+        ["overall", "home", "away"],
+    ):
+        with tab:
+            render_stats_table(
+                overview,
+                attack,
+                defense,
+                btts_data,
+                loc,
+                comp_overview,
+                comp_attack,
+                comp_defense,
+                comparison_btts,
+                is_home_team,
+            )
+
+def render_team_card(
+    col,
+    team_name: str,
+    team_position: int | str,
+    total_teams: int,
+    stats: Dict[str, Any],
+    btts_data: Dict[str, Any],
+    form_data: Dict[str, Any],
+    location: str = "home",
+    comparison_stats: Optional[Dict[str, Any]] = None,
+    comparison_btts: Optional[Dict[str, Any]] = None,
+    is_home_team: bool = True,
+):
+    with col:
+        st.write("")
+        st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'{team_name}</div>',
+    unsafe_allow_html=True,
+)
+        st.caption(f"League Position: <strong>{team_position}/{total_teams}</strong>", text_alignment="center", unsafe_allow_html=True)
+
+        with st.expander("Form", expanded=True):
+            _render_form_block(form_data, location)
+
+        with st.expander("Statistics", expanded=True):
+            _render_stats_tabs(
+                stats, btts_data, comparison_stats, comparison_btts, is_home_team
+            )
+
+def _overall_stats(overview, attack, defense, btts) -> list[float]:
+    matches = safe_get(overview, "matches_played", 1)
+    win_pct = safe_get(overview, "wins", 0) / matches * 100 if overview else 0
+    avg_total = safe_get(btts, "overall_avg_goals_per_match", 0)
+    scored = safe_get(attack, "goals_per_game", 0)
+    conceded = safe_get(defense, "goals_conceded_per_game", 0)
+    btts_pct = safe_get(btts, "overall_btts_pct", 0)
+    cs_pct = safe_get(btts, "overall_clean_sheet_pct", 0)
+    home_fts = safe_get(btts, "home_failed_to_score_pct", 0)
+    away_fts = safe_get(btts, "away_failed_to_score_pct", 0)
+    fts_pct = (home_fts + away_fts) / 2 if (home_fts or away_fts) else 0
+    xg = safe_get(attack, "xg_per_game", 0)
+    xga = safe_get(defense, "xga_per_game", 0)
+    return [win_pct, avg_total, scored, conceded, btts_pct, cs_pct, fts_pct, xg, xga]
+
+def _location_stats(btts: Dict[str, Any], prefix: str) -> list[float]:
+    win_pct = safe_get(btts, f"{prefix}_win_pct", 0)
+    avg_total = safe_get(btts, f"{prefix}_avg_goals_per_match", 0)
+    scored = safe_get(btts, f"{prefix}_avg_scored", 0)
+    conceded = safe_get(btts, f"{prefix}_avg_conceded", 0)
+    btts_pct = safe_get(btts, f"{prefix}_btts_pct", 0)
+    cs_pct = safe_get(btts, f"{prefix}_clean_sheet_pct", 0)
+    fts_pct = safe_get(btts, f"{prefix}_failed_to_score_pct", 0)
+    xg = safe_get(btts, f"{prefix}_avg_xg", 0)
+    xga = safe_get(btts, f"{prefix}_avg_xga", 0)
+    return [win_pct, avg_total, scored, conceded, btts_pct, cs_pct, fts_pct, xg, xga]
+
+def _current_values(
+    overview, attack, defense, btts_data, location_key: str
+) -> list[float]:
+    if location_key == "overall":
+        return _overall_stats(overview, attack, defense, btts_data)
+    prefix = "home" if location_key == "home" else "away"
+    return _location_stats(btts_data, prefix)
+
+def _comparison_values_overall(
+    comp_overview, comp_attack, comp_defense, comp_btts,
+) -> list[float]:
+    matches = safe_get(comp_overview, "matches_played", 1)
+    win_pct = safe_get(comp_overview, "wins", 0) / matches * 100 if comp_overview else 0
+    avg_total = safe_get(comp_btts, "overall_avg_goals_per_match", 0)
+    scored = safe_get(comp_attack, "goals_per_game", 0)
+    conceded = safe_get(comp_defense, "goals_conceded_per_game", 0)
+    btts_pct = safe_get(comp_btts, "overall_btts_pct", 0)
+    cs_pct = safe_get(comp_btts, "overall_clean_sheet_pct", 0)
+    home_fts = safe_get(comp_btts, "home_failed_to_score_pct", 0)
+    away_fts = safe_get(comp_btts, "away_failed_to_score_pct", 0)
+    fts_pct = (home_fts + away_fts) / 2 if (home_fts or away_fts) else 0
+    xg = safe_get(comp_attack, "xg_per_game", 0)
+    xga = safe_get(comp_defense, "xga_per_game", 0)
+    return [win_pct, avg_total, scored, conceded, btts_pct, cs_pct, fts_pct, xg, xga]
+
+def _comparison_values_location(
+    comp_btts: Dict[str, Any], comp_key: str
+) -> list[float]:
+    return _location_stats(comp_btts, comp_key)
+
+def _get_comparison_values(
+    location_key: str,
+    comp_overview,
+    comp_attack,
+    comp_defense,
+    comp_btts_data,
+    is_home_team: bool,
+) -> Optional[list[float]]:
+    if not comp_btts_data:
+        return None
+    if location_key == "overall":
+        return _comparison_values_overall(comp_overview, comp_attack, comp_defense, comp_btts_data)
+    comp_key = ("away" if is_home_team else "home") if location_key == "home" else (
+        "home" if is_home_team else "away"
+    )
+    return _comparison_values_location(comp_btts_data, comp_key)
+
+def _format_stat_value(stat_name: str, value: float) -> str:
+    if stat_name in ["Win %", "BTTS %", "CS %", "FTS %"]:
+        return format_percentage(value, decimals=2)
+    return format_number(value, 2)
+
+def _colorize_value(
+    stat_name: str,
+    current_val: float,
+    comp_val: Optional[float],
+    reverse_stats: set[str],
+) -> str:
+    formatted_val = _format_stat_value(stat_name, current_val)
+    if comp_val is None:
+        return formatted_val
+
+    # if equal, do not color at all
+    if current_val == comp_val:
+        return formatted_val
+
+    is_better = current_val < comp_val if stat_name in reverse_stats else current_val > comp_val
+    diff = abs(current_val - comp_val)
+    threshold = 0.1 if stat_name.endswith("%") else 0.01
+
+    # below or equal to threshold → no color
+    if diff <= threshold:
+        return formatted_val
+
+    color = "#22c55e" if is_better else "#ef4444"
+    return f'<span style="color: {color}; font-weight: bold;">{formatted_val}</span>'
+
+def render_stats_table(
+    overview,
+    attack,
+    defense,
+    btts_data,
+    location_key,
+    comp_overview=None,
+    comp_attack=None,
+    comp_defense=None,
+    comp_btts_data=None,
+    is_home_team: bool = True,
+):
+    current_values = _current_values(
+        overview, attack, defense, btts_data, location_key
+    )
+    comp_values = _get_comparison_values(
+        location_key, comp_overview, comp_attack, comp_defense, comp_btts_data, is_home_team
+    )
+
+    stat_names = ["Win %", "AVG", "Scored", "Conceded", "BTTS %", "CS %", "FTS %", "xG", "xGA"]
+    reverse_stats = {"Conceded", "FTS %", "xGA"}
+
+    formatted_values = [
+        _colorize_value(
+            stat_name,
+            cur,
+            comp_values[i] if comp_values else None,
+            reverse_stats,
+        )
+        for i, (stat_name, cur) in enumerate(zip(stat_names, current_values))
+    ]
+
+    # build and render the table
+    data = {
+        "Stat": stat_names,
+        "Value": formatted_values,
+    }
+    df = pd.DataFrame(data)
+
+    table_html = df.to_html(escape=False, index=False)
+    styled_table = f"""
+    <div style="width: 100%;">
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            th {{
+                background-color: #f0f2f6;
+                padding: 8px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            td {{
+                padding: 8px;
+                border-bottom: 1px solid #e0e0e0;
+            }}
+        </style>
+        {table_html}
+    </div>
+    """
+    st.markdown(styled_table, unsafe_allow_html=True)
+
+def render_scored_table(home_team_name: str,
+                        away_team_name: str,
+                        home_btts: Dict[str, Any],
+                        away_btts: Dict[str, Any]) -> None:
+    """Home (home_*) vs Away (away_*) scoring profile with colored comparison."""
+    metrics = ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Failed to Score']
+
+    home_vals = [
+        safe_get(home_btts, 'home_scored_over_05_pct', 0),
+        safe_get(home_btts, 'home_scored_over_15_pct', 0),
+        safe_get(home_btts, 'home_scored_over_25_pct', 0),
+        safe_get(home_btts, 'home_scored_over_35_pct', 0),
+        safe_get(home_btts, 'home_failed_to_score_pct', 0),
+    ]
+    away_vals = [
+        safe_get(away_btts, 'away_scored_over_05_pct', 0),
+        safe_get(away_btts, 'away_scored_over_15_pct', 0),
+        safe_get(away_btts, 'away_scored_over_25_pct', 0),
+        safe_get(away_btts, 'away_scored_over_35_pct', 0),
+        safe_get(away_btts, 'away_failed_to_score_pct', 0),
+    ]
+
+    def format_cell(val: float) -> str:
+        return format_percentage(val, 2)
+
+    def color_cell(metric: str, cur: float, other: float) -> str:
+        base = format_cell(cur)
+        if other is None:
+            return base
+        if cur == other:
+            return base
+
+        # For "Failed to Score", lower is better; otherwise higher is better
+        reverse = (metric == 'Failed to Score')
+        is_better = cur < other if reverse else cur > other
+        diff = abs(cur - other)
+        threshold = 0.1  # % points
+
+        if diff <= threshold:
+            return base
+
+        color = "#22c55e" if is_better else "#ef4444"
+        return f'<span style="color:{color}; font-weight:bold;">{base}</span>'
+
+    rows = []
+    for m, hv, av in zip(metrics, home_vals, away_vals):
+        h_html = color_cell(m, hv, av)
+        a_html = color_cell(m, av, hv)
+        rows.append({
+            "Metric": m,
+            f"{home_team_name} (Home)": h_html,
+            f"{away_team_name} (Away)": a_html,
+        })
+
+    df = pd.DataFrame(rows)
+    table_html = df.to_html(escape=False, index=False)
+    styled = f"""
+    <div style="width: 100%;">
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            th {{
+                background-color: #f0f2f6;
+                padding: 8px;
+                text-align: left !important;
+                font-weight: 600;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            td {{
+                padding: 8px;
+                border-bottom: 1px solid #e0e0e0;
+                text-align: left;
+            }}
+        </style>
+        {table_html}
+    </div>
+    """
+    st.markdown(styled, unsafe_allow_html=True)
+
+def render_conceded_table(home_team_name: str,
+                          away_team_name: str,
+                          home_btts: Dict[str, Any],
+                          away_btts: Dict[str, Any]) -> None:
+    """Home (home_*) vs Away (away_*) defensive profile with colored comparison."""
+    metrics = ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Clean Sheets']
+
+    home_vals = [
+        safe_get(home_btts, 'home_conceded_over_05_pct', 0),
+        safe_get(home_btts, 'home_conceded_over_15_pct', 0),
+        safe_get(home_btts, 'home_conceded_over_25_pct', 0),
+        safe_get(home_btts, 'home_conceded_over_35_pct', 0),
+        safe_get(home_btts, 'home_clean_sheet_pct', 0),
+    ]
+    away_vals = [
+        safe_get(away_btts, 'away_conceded_over_05_pct', 0),
+        safe_get(away_btts, 'away_conceded_over_15_pct', 0),
+        safe_get(away_btts, 'away_conceded_over_25_pct', 0),
+        safe_get(away_btts, 'away_conceded_over_35_pct', 0),
+        safe_get(away_btts, 'away_clean_sheet_pct', 0),
+    ]
+
+    def format_cell(val: float) -> str:
+        return format_percentage(val, 2)
+
+    def color_cell(metric: str, cur: float, other: float) -> str:
+        base = format_cell(cur)
+        if other is None:
+            return base
+        if cur == other:
+            return base
+
+        # For "Over X.5" conceded, lower is better; for "Clean Sheets", higher is better
+        reverse = metric.startswith("Over ")
+        is_better = cur < other if reverse else cur > other
+        diff = abs(cur - other)
+        threshold = 0.1  # % points
+
+        if diff <= threshold:
+            return base
+
+        color = "#22c55e" if is_better else "#ef4444"
+        return f'<span style="color:{color}; font-weight:bold;">{base}</span>'
+
+    rows = []
+    for m, hv, av in zip(metrics, home_vals, away_vals):
+        h_html = color_cell(m, hv, av)
+        a_html = color_cell(m, av, hv)
+        rows.append({
+            "Metric": m,
+            f"{home_team_name} (Home)": h_html,
+            f"{away_team_name} (Away)": a_html,
+        })
+
+    df = pd.DataFrame(rows)
+    table_html = df.to_html(escape=False, index=False)
+    styled = f"""
+    <div style="width: 100%;">
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            th {{
+                background-color: #f0f2f6;
+                padding: 8px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            td {{
+                padding: 8px;
+                border-bottom: 1px solid #e0e0e0;
+            }}
+        </style>
+        {table_html}
+    </div>
+    """
+    st.markdown(styled, unsafe_allow_html=True)
+
+def render_halves_scored_table(home_team_name: str,
+                               away_team_name: str,
+                               home_season: Dict[str, Any],
+                               away_season: Dict[str, Any]) -> None:
+    """Compare home vs away scoring by half with colored comparison."""
+    metrics = [
+        "Scored in 1H",
+        "Scored in 2H",
+        "Both Halves",
+        "Avg 1H Goals",
+        "Avg 2H Goals",
+    ]
+
+    home_vals = [
+        safe_get(home_season, "home_scored_1h_pct", 0),
+        safe_get(home_season, "home_scored_2h_pct", 0),
+        safe_get(home_season, "home_scored_both_halves_pct", 0),
+        safe_get(home_season, "home_avg_goals_1h", 0),
+        safe_get(home_season, "home_avg_goals_2h", 0),
+    ]
+    away_vals = [
+        safe_get(away_season, "away_scored_1h_pct", 0),
+        safe_get(away_season, "away_scored_2h_pct", 0),
+        safe_get(away_season, "away_scored_both_halves_pct", 0),
+        safe_get(away_season, "away_avg_goals_1h", 0),
+        safe_get(away_season, "away_avg_goals_2h", 0),
+    ]
+
+    def is_percent(metric: str) -> bool:
+        return metric.startswith("Scored") or metric == "Both Halves"
+
+    def format_cell(val: float, pct: bool) -> str:
+        return format_percentage(val, 2) if pct else format_number(val, 2)
+
+    def color_cell(metric: str, cur: float, other: float) -> str:
+        pct = is_percent(metric)
+        base = format_cell(cur, pct)
+        if other is None:
+            return base
+        if cur == other:
+            return base
+
+        # For scoring, higher is always better
+        is_better = cur > other
+        diff = abs(cur - other)
+        threshold = 0.1 if pct else 0.01
+
+        if diff <= threshold:
+            return base
+
+        color = "#22c55e" if is_better else "#ef4444"
+        return f'<span style="color:{color}; font-weight:bold;">{base}</span>'
+
+    rows = []
+    for m, hv, av in zip(metrics, home_vals, away_vals):
+        h_html = color_cell(m, hv, av)
+        a_html = color_cell(m, av, hv)
+        rows.append({
+            "Metric": m,
+            f"{home_team_name} (Home)": h_html,
+            f"{away_team_name} (Away)": a_html,
+        })
+
+    df = pd.DataFrame(rows)
+    table_html = df.to_html(escape=False, index=False)
+    styled = f"""
+    <div style="width: 100%;">
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            th {{
+                background-color: #f0f2f6;
+                padding: 8px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            td {{
+                padding: 8px;
+                border-bottom: 1px solid #e0e0e0;
+            }}
+        </style>
+        {table_html}
+    </div>
+    """
+    st.markdown(styled, unsafe_allow_html=True)
+
+def render_halves_conceded_table(home_team_name: str,
+                                 away_team_name: str,
+                                 home_season: Dict[str, Any],
+                                 away_season: Dict[str, Any]) -> None:
+    """Compare home vs away defensive stats by half with colored comparison."""
+    metrics = [
+        "1H Clean Sheet",
+        "2H Clean Sheet",
+        "Avg 1H Conceded",
+        "Avg 2H Conceded",
+    ]
+
+    home_vals = [
+        safe_get(home_season, "home_clean_sheet_1h_pct", 0),
+        safe_get(home_season, "home_clean_sheet_2h_pct", 0),
+        safe_get(home_season, "home_avg_conceded_1h", 0),
+        safe_get(home_season, "home_avg_conceded_2h", 0),
+    ]
+    away_vals = [
+        safe_get(away_season, "away_clean_sheet_1h_pct", 0),
+        safe_get(away_season, "away_clean_sheet_2h_pct", 0),
+        safe_get(away_season, "away_avg_conceded_1h", 0),
+        safe_get(away_season, "away_avg_conceded_2h", 0),
+    ]
+
+    def is_percent(metric: str) -> bool:
+        return "Clean Sheet" in metric
+
+    def format_cell(val: float, pct: bool) -> str:
+        return format_percentage(val, 2) if pct else format_number(val, 2)
+
+    def color_cell(metric: str, cur: float, other: float) -> str:
+        pct = is_percent(metric)
+        base = format_cell(cur, pct)
+        if other is None:
+            return base
+        if cur == other:
+            return base
+
+        # For clean sheets, higher is better; for Avg Conceded, lower is better
+        reverse = metric.startswith("Avg ")
+        is_better = cur < other if reverse else cur > other
+
+        diff = abs(cur - other)
+        threshold = 0.1 if pct else 0.01
+
+        if diff <= threshold:
+            return base
+
+        color = "#22c55e" if is_better else "#ef4444"
+        return f'<span style="color:{color}; font-weight:bold;">{base}</span>'
+
+    rows = []
+    for m, hv, av in zip(metrics, home_vals, away_vals):
+        h_html = color_cell(m, hv, av)
+        a_html = color_cell(m, av, hv)
+        rows.append({
+            "Metric": m,
+            f"{home_team_name} (Home)": h_html,
+            f"{away_team_name} (Away)": a_html,
+        })
+
+    df = pd.DataFrame(rows)
+    table_html = df.to_html(escape=False, index=False)
+    styled = f"""
+    <div style="width: 100%;">
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            th {{
+                background-color: #f0f2f6;
+                padding: 8px;
+                text-align: left;
+                font-weight: 600;
+                border-bottom: 2px solid #e0e0e0;
+            }}
+            td {{
+                padding: 8px;
+                border-bottom: 1px solid #e0e0e0;
+            }}
+        </style>
+        {table_html}
+    </div>
+    """
+    st.markdown(styled, unsafe_allow_html=True)
+
 # ============================================================================
 # MAIN PAGE
 # ============================================================================
 
 st.title("Head 2 Head Teams Comparison")
 st.markdown("Compare two teams based on upcoming fixtures")
-st.markdown("---")
 
 # ============================================================================
 # FIXTURE SELECTOR
@@ -312,7 +911,15 @@ except Exception as e:
 # SECTION 1: HEAD-TO-HEAD STATISTICS
 # ============================================================================
 
-with st.expander("Head-to-Head Statistics", expanded=True, width='stretch'):
+st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'Head-to-Head'
+    f'</div>',
+    unsafe_allow_html=True,
+)
+
+
+with st.expander("Statistics", expanded=True, width='stretch'):
     if h2h_data and h2h_data.get('total_matches', 0) > 0:
         
         # Determine which team is team1 and team2
@@ -593,125 +1200,16 @@ with st.expander("Head-to-Head Statistics", expanded=True, width='stretch'):
 # ============================================================================
 
 st.markdown("---")
-st.markdown("## Team Profiles")
+st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'Team Profiles'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 col_home, col_away = st.columns(2)
 
-def render_team_card(
-    col,
-    team_name: str,
-    team_position: int | str,
-    total_teams: int,
-    stats: Dict[str, Any],
-    btts_data: Dict[str, Any],
-    form_data: Dict[str, Any],
-    location: str = "home"  # "home" or "away"
-):
-    """Render team card with form and stats."""
-    with col:
-        st.markdown(f"### {team_name}")
-        st.caption(f"League Position: {team_position}/{total_teams}")
-        
-        # Form section
-        with st.expander(f"📈 Form", expanded=True):
-            # Overall form
-            overall_results = parse_form_string(safe_get(form_data, 'last_results', ''), 5)
-            overall_ppg = safe_get(form_data, 'points_last', 0) / 5 if overall_results else 0
-            
-            st.markdown("**Overall (Last 5)**")
-            if overall_results:
-                st.markdown(format_form_html(overall_results), unsafe_allow_html=True)
-                st.caption(f"PPG: {overall_ppg:.2f}")
-            
-            # Home/Away specific form
-            st.markdown(f"**{location.capitalize()} (Last 5)**")
-            
-            # Use last_5_results_home or last_5_results_away from form_data
-            location_key = f'last_5_results_{location}'
-            points_key = f'points_last_5_{location}'
-            
-            location_results = parse_form_string(safe_get(form_data, location_key, ''), 5)
-            location_ppg = safe_get(form_data, points_key, 0) / 5 if location_results else 0
-            
-            if location_results:
-                st.markdown(format_form_html(location_results), unsafe_allow_html=True)
-                st.caption(f"PPG: {location_ppg:.2f}")
-            else:
-                st.info(f"No {location} form data available") 
-        
-        # Stats table
-        with st.expander("📊 Statistics", expanded=True):
-            # Get relevant stats based on location
-            overview = stats.get('overview', {})
-            attack = stats.get('attack', {})
-            defense = stats.get('defense', {})
-            
-            # Create tabs for Overall, Home, Away
-            tab1, tab2, tab3 = st.tabs(["Overall", "Home", "Away"])
-            
-            with tab1:
-                render_stats_table(overview, attack, defense, btts_data, "overall")
-            
-            with tab2:
-                render_stats_table(overview, attack, defense, btts_data, "home")
-            
-            with tab3:
-                render_stats_table(overview, attack, defense, btts_data, "away")
-
-def render_stats_table(overview, attack, defense, btts_data, location_key):
-    """Render statistics table for a specific location (overall/home/away)."""
-    
-    if location_key == "overall":
-        win_pct = safe_get(overview, 'wins', 0) / safe_get(overview, 'matches_played', 1) * 100 if overview else 0
-        avg_total = safe_get(btts_data, 'overall_avg_goals_per_match', 0)
-        scored = safe_get(attack, 'goals_per_game', 0)
-        conceded = safe_get(defense, 'goals_conceded_per_game', 0)
-        btts_pct = safe_get(btts_data, 'overall_btts_pct', 0)
-        cs_pct = safe_get(btts_data, 'overall_clean_sheet_pct', 0)
-        # Calculate FTS from BTTS data
-        fts_pct = safe_get(btts_data, 'overall_clean_sheet_pct', 0)  # Opponent didn't score = we failed to score
-        xg = safe_get(attack, 'xg_per_game', 0)
-        xga = safe_get(defense, 'xga_per_game', 0)
-    elif location_key == "home":
-        win_pct = safe_get(btts_data, 'home_win_pct', 0)
-        avg_total = safe_get(btts_data, 'home_avg_goals_per_match', 0)
-        scored = safe_get(btts_data, 'home_avg_scored', 0)
-        conceded = safe_get(btts_data, 'home_avg_conceded', 0)
-        btts_pct = safe_get(btts_data, 'home_btts_pct', 0)
-        cs_pct = safe_get(btts_data, 'home_clean_sheet_pct', 0)
-        fts_pct = safe_get(btts_data, 'home_failed_to_score_pct', 0)
-        xg = safe_get(btts_data, 'home_avg_xg', 0)
-        xga = safe_get(btts_data, 'home_avg_xga', 0)
-    else:  # away
-        win_pct = safe_get(btts_data, 'away_win_pct', 0)
-        avg_total = safe_get(btts_data, 'away_avg_goals_per_match', 0)
-        scored = safe_get(btts_data, 'away_avg_scored', 0)
-        conceded = safe_get(btts_data, 'away_avg_conceded', 0)
-        btts_pct = safe_get(btts_data, 'away_btts_pct', 0)
-        cs_pct = safe_get(btts_data, 'away_clean_sheet_pct', 0)
-        fts_pct = safe_get(btts_data, 'away_failed_to_score_pct', 0)
-        xg = safe_get(btts_data, 'away_avg_xg', 0)
-        xga = safe_get(btts_data, 'away_avg_xga', 0)
-    
-    data = {
-        'Stat': ['Win %', 'AVG', 'Scored', 'Conceded', 'BTTS %', 'CS %', 'FTS %', 'xG', 'xGA'],
-        'Value': [
-            format_percentage(win_pct),
-            format_number(avg_total, 2),
-            format_number(scored, 2),
-            format_number(conceded, 2),
-            format_percentage(btts_pct),
-            format_percentage(cs_pct),
-            format_percentage(fts_pct),
-            format_number(xg, 2),
-            format_number(xga, 2)
-        ]
-    }
-    
-    df = pd.DataFrame(data)
-    st.dataframe(df, hide_index=True, width='stretch')
-
-# Render both team cards
+# Home Team Card
 render_team_card(
     col_home,
     home_team_name,
@@ -720,9 +1218,13 @@ render_team_card(
     home_stats,
     home_btts,
     home_form_5,
-    "home"
+    "home",
+    comparison_stats=away_stats,
+    comparison_btts=away_btts,
+    is_home_team=True
 )
 
+# Away Team Card
 render_team_card(
     col_away,
     away_team_name,
@@ -731,7 +1233,10 @@ render_team_card(
     away_stats,
     away_btts,
     away_form_5,
-    "away"
+    "away",
+    comparison_stats=home_stats,
+    comparison_btts=home_btts,
+    is_home_team=False
 )
 
 # ============================================================================
@@ -739,7 +1244,12 @@ render_team_card(
 # ============================================================================
 
 st.markdown("---")
-st.markdown("## 📊 Current Form Comparison")
+st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'Current Form Comparison'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 with st.expander("Form Analysis", expanded=True):
     # PPG comparison - Home team's home PPG vs Away team's away PPG
@@ -765,52 +1275,81 @@ with st.expander("Form Analysis", expanded=True):
     # Calculate PPG for away team away
     away_ppg_away = (away_wins_away * 3 + away_draws_away * 1) / away_matches_away if away_matches_away > 0 else 0
     
-    ppg_diff, ppg_diff_str = calculate_percentage_diff(home_ppg_home, away_ppg_away)
-    
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col1:
-        st.metric(f"{home_team_name} PPG (Home)", f"{home_ppg_home:.2f}")
-        st.caption(f"{home_wins_home}W {home_draws_home}D in {home_matches_home} matches")
-    
+        home_block = f"""
+        <div class="stat-box" style="border-left: 4px solid #22c55e;">
+            <div class="stat-box-label">{home_team_name} PPG (Home)</div>
+            <div class="stat-box-value">{home_ppg_home:.2f}</div>
+            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                {home_wins_home}W {home_draws_home}D in {home_matches_home} matches
+            </div>
+        </div>
+        """
+        st.markdown(home_block, unsafe_allow_html=True)
+
     with col2:
-        st.markdown(f"### {home_team_name} (Home) is {ppg_diff_str} in PPG compared to {away_team_name} (Away)")
-        
-        # Visual comparison bar
+        # decide ordering based on PPG
+        if home_ppg_home >= away_ppg_away:
+            top_team, top_ppg = home_team_name, home_ppg_home
+            bottom_team, bottom_ppg = away_team_name, away_ppg_away
+        else:
+            top_team, top_ppg = away_team_name, away_ppg_away
+            bottom_team, bottom_ppg = home_team_name, home_ppg_home
+
+        ppg_diff, ppg_diff_str = calculate_percentage_diff(top_ppg, bottom_ppg)
+
+        st.markdown(
+            f'''
+            <div class="ppg-highlight">
+                <strong>{top_team}</strong> is <strong>{ppg_diff_str}</strong> better in PPG than <strong>{bottom_team}</strong>.
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
+
+        # central PPG bars – keep same colors as side cards
         max_ppg = max(home_ppg_home, away_ppg_away, 3.0)
-        home_pct = (home_ppg_home / max_ppg) * 100
-        away_pct = (away_ppg_away / max_ppg) * 100
-        
+
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            y=[f"{home_team_name} (Home)"],
+            y=[f""],
             x=[home_ppg_home],
-            orientation='h',
-            marker=dict(color='#22c55e'),
+            orientation="h",
+            marker=dict(color="#22c55e"),  # same as home side card border
             text=f"{home_ppg_home:.2f}",
-            textposition='inside'
+            textposition="inside",
         ))
         fig.add_trace(go.Bar(
-            y=[f"{away_team_name} (Away)"],
+            y=[f""],
             x=[away_ppg_away],
-            orientation='h',
-            marker=dict(color='#ef4444'),
+            orientation="h",
+            marker=dict(color="#ef4444"),  # same as away side card border
             text=f"{away_ppg_away:.2f}",
-            textposition='inside'
+            textposition="inside",
         ))
-        
+
         fig.update_layout(
             showlegend=False,
             height=150,
             margin=dict(l=0, r=0, t=0, b=0),
             xaxis=dict(title="Points Per Game (Current Season)"),
         )
-        st.plotly_chart(fig, width = 'stretch')
-    
+        st.plotly_chart(fig, width='stretch')
+
     with col3:
-        st.metric(f"{away_team_name} PPG (Away)", f"{away_ppg_away:.2f}")
-        st.caption(f"{away_wins_away}W {away_draws_away}D in {away_matches_away} matches")
-    
+        away_block = f"""
+        <div class="stat-box" style="border-left: 4px solid #ef4444;">
+            <div class="stat-box-label">{away_team_name} PPG (Away)</div>
+            <div class="stat-box-value">{away_ppg_away:.2f}</div>
+            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                {away_wins_away}W {away_draws_away}D in {away_matches_away} matches
+            </div>
+        </div>
+        """
+        st.markdown(away_block, unsafe_allow_html=True)
+
     # Last 5 results breakdown
     st.markdown("#### Last 5 Results")
     
@@ -867,10 +1406,14 @@ with st.expander("Form Analysis", expanded=True):
 # ============================================================================
 
 st.markdown("---")
-st.markdown("## ⚽ Goals Scored Comparison")
+st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'Goals Scored Comparison'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
-with st.expander("Scoring Analysis", expanded=True):
-    # ...existing scoring comparison code...
+with st.expander("Offensive Analysis", expanded=True):
     
     # Scored per game breakdown
     st.markdown("#### Scored Per Game")
@@ -879,85 +1422,32 @@ with st.expander("Scoring Analysis", expanded=True):
     tab1, tab2 = st.tabs(["Full-Time", "1st Half / 2nd Half"])
     
     with tab1:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**{home_team_name} (Home)**")
-            home_scoring_data = {
-                'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Failed to Score'],
-                'Percentage': [
-                    format_percentage(safe_get(home_btts, 'home_scored_over_05_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_scored_over_15_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_scored_over_25_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_scored_over_35_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_failed_to_score_pct', 0))
-                ]
-            }
-            st.dataframe(home_scoring_data, hide_index=True, width='stretch')
-        
-        with col2:
-            st.markdown(f"**{away_team_name} (Away)**")
-            away_scoring_data = {
-                'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Failed to Score'],
-                'Percentage': [
-                    format_percentage(safe_get(away_btts, 'away_scored_over_05_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_scored_over_15_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_scored_over_25_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_scored_over_35_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_failed_to_score_pct', 0))
-                ]
-            }
-            st.dataframe(away_scoring_data, hide_index=True, width='stretch')
+        render_scored_table(home_team_name, away_team_name, home_btts, away_btts)
+
     
     with tab2:
-        # Get season summary data for half-time stats
         try:
-            home_season = get_all_team_stats(home_team_id, season_id).get('season_summary', {})
-            away_season = get_all_team_stats(away_team_id, season_id).get('season_summary', {})
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"**{home_team_name} (Home)**")
-                home_halves_data = {
-                    'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
-                    'Value': [
-                        format_percentage(safe_get(home_season, 'home_scored_1h_pct', 0)),
-                        format_percentage(safe_get(home_season, 'home_scored_2h_pct', 0)),
-                        format_percentage(safe_get(home_season, 'home_scored_both_halves_pct', 0)),
-                        format_number(safe_get(home_season, 'home_avg_goals_1h', 0), 2),
-                        format_number(safe_get(home_season, 'home_avg_goals_2h', 0), 2)
-                    ]
-                }
-                st.dataframe(home_halves_data, hide_index=True, width='stretch')
-            
-            with col2:
-                st.markdown(f"**{away_team_name} (Away)**")
-                away_halves_data = {
-                    'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
-                    'Value': [
-                        format_percentage(safe_get(away_season, 'away_scored_1h_pct', 0)),
-                        format_percentage(safe_get(away_season, 'away_scored_2h_pct', 0)),
-                        format_percentage(safe_get(away_season, 'away_scored_both_halves_pct', 0)),
-                        format_number(safe_get(away_season, 'away_avg_goals_1h', 0), 2),
-                        format_number(safe_get(away_season, 'away_avg_goals_2h', 0), 2)
-                    ]
-                }
-                st.dataframe(away_halves_data, hide_index=True, width='stretch')
-                
+            home_season = get_all_team_stats(home_team_id, season_id).get("season_summary", {})
+            away_season = get_all_team_stats(away_team_id, season_id).get("season_summary", {})
+            render_halves_scored_table(home_team_name, away_team_name, home_season, away_season)
         except Exception as e:
             logger.error(f"Error loading half-time scoring data: {e}")
             st.info("⚠️ Half-time scoring data not available")
+
 
 # ============================================================================
 # SECTION 6: GOALS CONCEDED COMPARISON
 # ============================================================================
 
 st.markdown("---")
-st.markdown("## 🛡️ Goals Conceded Comparison")
+st.markdown(
+    f'<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    f'Goals Conceded Comparison'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 with st.expander("Defensive Analysis", expanded=True):
-    # ...existing defensive comparison code...
     
     # Conceded per game breakdown
     st.markdown("#### Conceded Per Game")
@@ -965,69 +1455,14 @@ with st.expander("Defensive Analysis", expanded=True):
     tab1, tab2 = st.tabs(["Full-Time", "1st Half / 2nd Half"])
     
     with tab1:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**{home_team_name} (Home)**")
-            home_conceded_data = {
-                'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Clean Sheets'],
-                'Percentage': [
-                    format_percentage(safe_get(home_btts, 'home_conceded_over_05_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_conceded_over_15_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_conceded_over_25_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_conceded_over_35_pct', 0)),
-                    format_percentage(safe_get(home_btts, 'home_clean_sheet_pct', 0))
-                ]
-            }
-            st.dataframe(home_conceded_data, hide_index=True, width='stretch')
-        
-        with col2:
-            st.markdown(f"**{away_team_name} (Away)**")
-            away_conceded_data = {
-                'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Clean Sheets'],
-                'Percentage': [
-                    format_percentage(safe_get(away_btts, 'away_conceded_over_05_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_conceded_over_15_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_conceded_over_25_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_conceded_over_35_pct', 0)),
-                    format_percentage(safe_get(away_btts, 'away_clean_sheet_pct', 0))
-                ]
-            }
-            st.dataframe(away_conceded_data, hide_index=True, width='stretch')
+        render_conceded_table(home_team_name, away_team_name, home_btts, away_btts)
+
     
     with tab2:
         try:
-            home_season = get_all_team_stats(home_team_id, season_id).get('season_summary', {})
-            away_season = get_all_team_stats(away_team_id, season_id).get('season_summary', {})
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"**{home_team_name} (Home)**")
-                home_def_halves = {
-                    'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
-                    'Value': [
-                        format_percentage(safe_get(home_season, 'home_clean_sheet_1h_pct', 0)),
-                        format_percentage(safe_get(home_season, 'home_clean_sheet_2h_pct', 0)),
-                        format_number(safe_get(home_season, 'home_avg_conceded_1h', 0), 2),
-                        format_number(safe_get(home_season, 'home_avg_conceded_2h', 0), 2)
-                    ]
-                }
-                st.dataframe(home_def_halves, hide_index=True, width='stretch')
-            
-            with col2:
-                st.markdown(f"**{away_team_name} (Away)**")
-                away_def_halves = {
-                    'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
-                    'Value': [
-                        format_percentage(safe_get(away_season, 'away_clean_sheet_1h_pct', 0)),
-                        format_percentage(safe_get(away_season, 'away_clean_sheet_2h_pct', 0)),
-                        format_number(safe_get(away_season, 'away_avg_conceded_1h', 0), 2),
-                        format_number(safe_get(away_season, 'away_avg_conceded_2h', 0), 2)
-                    ]
-                }
-                st.dataframe(away_def_halves, hide_index=True, width='stretch')
-                
+            home_season = get_all_team_stats(home_team_id, season_id).get("season_summary", {})
+            away_season = get_all_team_stats(away_team_id, season_id).get("season_summary", {})
+            render_halves_conceded_table(home_team_name, away_team_name, home_season, away_season)
         except Exception as e:
             logger.error(f"Error loading half-time defensive data: {e}")
             st.info("⚠️ Half-time defensive data not available")
@@ -1037,50 +1472,63 @@ with st.expander("Defensive Analysis", expanded=True):
 # ============================================================================
 
 st.markdown("---")
-st.markdown("## 🎯 Will Teams Score?")
+st.markdown(
+    '<div class="team-name-box" style="font-size:22px; padding:10px 16px;">'
+    'Will Teams Score?'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 with st.expander("Scoring Probability", expanded=True):
     # Home team scoring probability
-    home_scored_pct = safe_get(home_btts, 'home_scored_over_05_pct', 0)  # % of home matches where they scored
-    away_cs_pct = safe_get(away_btts, 'away_clean_sheet_pct', 0)  # % of away matches where opponent didn't score
-    
+    home_scored_pct = safe_get(home_btts, 'home_scored_over_05_pct', 0)
+    away_cs_pct = safe_get(away_btts, 'away_clean_sheet_pct', 0)
+
     # Away team scoring probability
     away_scored_pct = safe_get(away_btts, 'away_scored_over_05_pct', 0)
     home_cs_pct = safe_get(home_btts, 'home_clean_sheet_pct', 0)
-    
+
     # Calculate scoring chances
     home_score_diff = home_scored_pct - away_cs_pct
     away_score_diff = away_scored_pct - home_cs_pct
-    
+
     home_chance_category, home_chance_icon = get_chance_category(home_score_diff)
     away_chance_category, away_chance_icon = get_chance_category(away_score_diff)
-    
-    # Display
+
     col1, col2 = st.columns(2)
-    
+
+    # ---------------- Home block ----------------
     with col1:
-        st.markdown(f"### Will {home_team_name} Score?")
-        
-        st.metric(
-            f"{home_team_name} scored in (Home)",
-            format_percentage(home_scored_pct),
-            help="Percentage of home matches where this team scored"
+        st.markdown(
+            f"""
+            <div class="stat-box" style="border-left: 4px solid #22c55e;">
+              <div class="stat-box-label">Will {home_team_name} Score?</div>
+              <div style="margin-top: 4px;">
+                <div class="metric-row">
+                  <span class="stat-label">{home_team_name} scored in (Home)</span>
+                  <span class="stat-value">{format_percentage(home_scored_pct, 2)}</span>
+                </div>
+                <div class="metric-row">
+                  <span class="stat-label">{away_team_name} clean sheets (Away)</span>
+                  <span class="stat-value">{format_percentage(away_cs_pct, 2)}</span>
+                </div>
+              </div>
+              <div class="ppg-highlight" style="margin-top: 8px;">
+                <strong>{home_chance_icon} {home_chance_category}</strong><br/>
+                <span style="font-size: 13px;">
+                  {"%s has scored in %.2f%% of home matches, while %s kept clean sheets in only %.2f%% of away matches."
+                   % (home_team_name, home_scored_pct, away_team_name, away_cs_pct)
+                   if home_score_diff > 0 else
+                   "%s has strong away defense (%.2f%% clean sheets), which may limit %s's scoring."
+                   % (away_team_name, away_cs_pct, home_team_name)}
+                </span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        st.metric(
-            f"{away_team_name} clean sheets (Away)",
-            format_percentage(away_cs_pct),
-            help="Percentage of away matches where opponent didn't score"
-        )
-        
-        # Verdict
-        st.markdown(f"### {home_chance_icon} {home_chance_category}")
-        
-        if home_score_diff > 0:
-            st.success(f"{home_team_name} has scored in {home_scored_pct:.1f}% of home matches, while {away_team_name} kept clean sheets in only {away_cs_pct:.1f}% of away matches.")
-        else:
-            st.warning(f"{away_team_name} has strong away defense ({away_cs_pct:.1f}% clean sheets), which may limit {home_team_name}'s scoring.")
-        
-        # Visual gauge
+
+        # Gauge
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=home_scored_pct,
@@ -1091,41 +1539,49 @@ with st.expander("Scoring Probability", expanded=True):
                 'steps': [
                     {'range': [0, 50], 'color': "#fee2e2"},
                     {'range': [50, 75], 'color': "#fef3c7"},
-                    {'range': [75, 100], 'color': "#dcfce7"}
+                    {'range': [75, 100], 'color': "#dcfce7"},
                 ],
                 'threshold': {
                     'line': {'color': "red", 'width': 4},
                     'thickness': 0.75,
-                    'value': away_cs_pct
-                }
-            }
+                    'value': away_cs_pct,
+                },
+            },
         ))
         fig.update_layout(height=250)
-        st.plotly_chart(fig, width = 'stretch')
-    
+        st.plotly_chart(fig, width='stretch')
+
+    # ---------------- Away block ----------------
     with col2:
-        st.markdown(f"### Will {away_team_name} Score?")
-        
-        st.metric(
-            f"{away_team_name} scored in (Away)",
-            format_percentage(away_scored_pct),
-            help="Percentage of away matches where this team scored"
+        st.markdown(
+            f"""
+            <div class="stat-box" style="border-left: 4px solid #ef4444;">
+              <div class="stat-box-label">Will {away_team_name} Score?</div>
+              <div style="margin-top: 4px;">
+                <div class="metric-row">
+                  <span class="stat-label">{away_team_name} scored in (Away)</span>
+                  <span class="stat-value">{format_percentage(away_scored_pct, 2)}</span>
+                </div>
+                <div class="metric-row">
+                  <span class="stat-label">{home_team_name} clean sheets (Home)</span>
+                  <span class="stat-value">{format_percentage(home_cs_pct, 2)}</span>
+                </div>
+              </div>
+              <div class="ppg-highlight" style="margin-top: 8px;">
+                <strong>{away_chance_icon} {away_chance_category}</strong><br/>
+                <span style="font-size: 13px;">
+                  {"%s has scored in %.2f%% of away matches, while %s kept clean sheets in only %.2f%% of home matches."
+                   % (away_team_name, away_scored_pct, home_team_name, home_cs_pct)
+                   if away_score_diff > 0 else
+                   "%s has strong home defense (%.2f%% clean sheets), which may limit %s's scoring."
+                   % (home_team_name, home_cs_pct, away_team_name)}
+                </span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
-        st.metric(
-            f"{home_team_name} clean sheets (Home)",
-            format_percentage(home_cs_pct),
-            help="Percentage of home matches where opponent didn't score"
-        )
-        
-        # Verdict
-        st.markdown(f"### {away_chance_icon} {away_chance_category}")
-        
-        if away_score_diff > 0:
-            st.success(f"{away_team_name} has scored in {away_scored_pct:.1f}% of away matches, while {home_team_name} kept clean sheets in only {home_cs_pct:.1f}% of home matches.")
-        else:
-            st.warning(f"{home_team_name} has strong home defense ({home_cs_pct:.1f}% clean sheets), which may limit {away_team_name}'s scoring.")
-        
-        # Visual gauge
+
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=away_scored_pct,
@@ -1136,17 +1592,17 @@ with st.expander("Scoring Probability", expanded=True):
                 'steps': [
                     {'range': [0, 50], 'color': "#fee2e2"},
                     {'range': [50, 75], 'color': "#fef3c7"},
-                    {'range': [75, 100], 'color': "#dcfce7"}
+                    {'range': [75, 100], 'color': "#dcfce7"},
                 ],
                 'threshold': {
                     'line': {'color': "red", 'width': 4},
                     'thickness': 0.75,
-                    'value': home_cs_pct
-                }
-            }
+                    'value': home_cs_pct,
+                },
+            },
         ))
         fig.update_layout(height=250)
-        st.plotly_chart(fig, width = 'stretch')
+        st.plotly_chart(fig, width='stretch')
 
 st.markdown("---")
 st.caption(f"*Data from current season - {home_team_name} (Home) vs {away_team_name} (Away)*")
