@@ -12,13 +12,13 @@ import logging
 import os
 import sys
 from datetime import date, timedelta
-from components.filters import date_range_filter
 
 # Ensure project root is importable
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from components.filters import date_range_filter
 from services.queries import (
     get_upcoming_fixtures,
     get_head_to_head,
@@ -613,7 +613,7 @@ def render_team_card(
         st.caption(f"League Position: {team_position}/{total_teams}")
         
         # Form section
-        with st.expander("📈 Form", expanded=True):
+        with st.expander(f"📈 Form", expanded=True):
             # Overall form
             overall_results = parse_form_string(safe_get(form_data, 'last_results', ''), 5)
             overall_ppg = safe_get(form_data, 'points_last', 0) / 5 if overall_results else 0
@@ -623,9 +623,21 @@ def render_team_card(
                 st.markdown(format_form_html(overall_results), unsafe_allow_html=True)
                 st.caption(f"PPG: {overall_ppg:.2f}")
             
-            # Home/Away specific (NOTE: Requires home/away specific form data)
+            # Home/Away specific form
             st.markdown(f"**{location.capitalize()} (Last 5)**")
-            st.info(f"⚠️ {location.capitalize()}-specific form requires new database columns in `mart_team_form`: `last_5_results_home`, `points_last_5_home`, `last_5_results_away`, `points_last_5_away`")
+            
+            # Use last_5_results_home or last_5_results_away from form_data
+            location_key = f'last_5_results_{location}'
+            points_key = f'points_last_5_{location}'
+            
+            location_results = parse_form_string(safe_get(form_data, location_key, ''), 5)
+            location_ppg = safe_get(form_data, points_key, 0) / 5 if location_results else 0
+            
+            if location_results:
+                st.markdown(format_form_html(location_results), unsafe_allow_html=True)
+                st.caption(f"PPG: {location_ppg:.2f}")
+            else:
+                st.info(f"No {location} form data available") 
         
         # Stats table
         with st.expander("📊 Statistics", expanded=True):
@@ -656,18 +668,18 @@ def render_stats_table(overview, attack, defense, btts_data, location_key):
         conceded = safe_get(defense, 'goals_conceded_per_game', 0)
         btts_pct = safe_get(btts_data, 'overall_btts_pct', 0)
         cs_pct = safe_get(btts_data, 'overall_clean_sheet_pct', 0)
-        fts_pct = 100 - safe_get(attack, 'scored_in_match_pct', 100)  # NOTE: Needs new column
+        # Calculate FTS from BTTS data
+        fts_pct = safe_get(btts_data, 'overall_clean_sheet_pct', 0)  # Opponent didn't score = we failed to score
         xg = safe_get(attack, 'xg_per_game', 0)
         xga = safe_get(defense, 'xga_per_game', 0)
     elif location_key == "home":
-        # Use home-specific stats from BTTS analysis
         win_pct = safe_get(btts_data, 'home_win_pct', 0)
         avg_total = safe_get(btts_data, 'home_avg_goals_per_match', 0)
         scored = safe_get(btts_data, 'home_avg_scored', 0)
         conceded = safe_get(btts_data, 'home_avg_conceded', 0)
         btts_pct = safe_get(btts_data, 'home_btts_pct', 0)
         cs_pct = safe_get(btts_data, 'home_clean_sheet_pct', 0)
-        fts_pct = 0  # NOTE: Needs calculation
+        fts_pct = safe_get(btts_data, 'home_failed_to_score_pct', 0)
         xg = safe_get(btts_data, 'home_avg_xg', 0)
         xga = safe_get(btts_data, 'home_avg_xga', 0)
     else:  # away
@@ -677,13 +689,9 @@ def render_stats_table(overview, attack, defense, btts_data, location_key):
         conceded = safe_get(btts_data, 'away_avg_conceded', 0)
         btts_pct = safe_get(btts_data, 'away_btts_pct', 0)
         cs_pct = safe_get(btts_data, 'away_clean_sheet_pct', 0)
-        fts_pct = 0  # NOTE: Needs calculation
+        fts_pct = safe_get(btts_data, 'away_failed_to_score_pct', 0)
         xg = safe_get(btts_data, 'away_avg_xg', 0)
         xga = safe_get(btts_data, 'away_avg_xga', 0)
-    
-    # NOTE: FTS (Failed to Score) percentage needs to be added to database
-    if fts_pct == 0:
-        st.info("⚠️ FTS% requires new column: `failed_to_score_pct` (overall/home/away splits)")
     
     data = {
         'Stat': ['Win %', 'AVG', 'Scored', 'Conceded', 'BTTS %', 'CS %', 'FTS %', 'xG', 'xGA'],
@@ -694,14 +702,14 @@ def render_stats_table(overview, attack, defense, btts_data, location_key):
             format_number(conceded, 2),
             format_percentage(btts_pct),
             format_percentage(cs_pct),
-            format_percentage(fts_pct) if fts_pct > 0 else "N/A",
+            format_percentage(fts_pct),
             format_number(xg, 2),
             format_number(xga, 2)
         ]
     }
     
     df = pd.DataFrame(data)
-    st.dataframe(df, hide_index=True, width = 'stretch')
+    st.dataframe(df, hide_index=True, width='stretch')
 
 # Render both team cards
 render_team_card(
@@ -734,40 +742,60 @@ st.markdown("---")
 st.markdown("## 📊 Current Form Comparison")
 
 with st.expander("Form Analysis", expanded=True):
-    # PPG comparison
-    home_ppg_overall = safe_get(home_form_5, 'points_last', 0) / 5
-    away_ppg_overall = safe_get(away_form_5, 'points_last', 0) / 5
+    # PPG comparison - Home team's home PPG vs Away team's away PPG
+    # Get actual home/away wins, draws, losses from season summary
+    season_summary_home = home_stats.get('season_summary', {})
+    season_summary_away = away_stats.get('season_summary', {})
     
-    ppg_diff, ppg_diff_str = calculate_percentage_diff(home_ppg_overall, away_ppg_overall)
+    # Home team's home record
+    home_wins_home = safe_get(season_summary_home, 'home_wins', 0)
+    home_draws_home = safe_get(season_summary_home, 'home_draws', 0)
+    home_losses_home = safe_get(season_summary_home, 'home_losses', 0)
+    home_matches_home = home_wins_home + home_draws_home + home_losses_home
+    
+    # Calculate PPG for home team at home
+    home_ppg_home = (home_wins_home * 3 + home_draws_home * 1) / home_matches_home if home_matches_home > 0 else 0
+    
+    # Away team's away record
+    away_wins_away = safe_get(season_summary_away, 'away_wins', 0)
+    away_draws_away = safe_get(season_summary_away, 'away_draws', 0)
+    away_losses_away = safe_get(season_summary_away, 'away_losses', 0)
+    away_matches_away = away_wins_away + away_draws_away + away_losses_away
+    
+    # Calculate PPG for away team away
+    away_ppg_away = (away_wins_away * 3 + away_draws_away * 1) / away_matches_away if away_matches_away > 0 else 0
+    
+    ppg_diff, ppg_diff_str = calculate_percentage_diff(home_ppg_home, away_ppg_away)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col1:
-        st.metric(f"{home_team_name} PPG", f"{home_ppg_overall:.2f}")
+        st.metric(f"{home_team_name} PPG (Home)", f"{home_ppg_home:.2f}")
+        st.caption(f"{home_wins_home}W {home_draws_home}D in {home_matches_home} matches")
     
     with col2:
-        st.markdown(f"### {home_team_name} is {ppg_diff_str} better in form")
+        st.markdown(f"### {home_team_name} (Home) is {ppg_diff_str} in PPG compared to {away_team_name} (Away)")
         
         # Visual comparison bar
-        max_ppg = max(home_ppg_overall, away_ppg_overall, 3.0)
-        home_pct = (home_ppg_overall / max_ppg) * 100
-        away_pct = (away_ppg_overall / max_ppg) * 100
+        max_ppg = max(home_ppg_home, away_ppg_away, 3.0)
+        home_pct = (home_ppg_home / max_ppg) * 100
+        away_pct = (away_ppg_away / max_ppg) * 100
         
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            y=[home_team_name],
-            x=[home_ppg_overall],
+            y=[f"{home_team_name} (Home)"],
+            x=[home_ppg_home],
             orientation='h',
             marker=dict(color='#22c55e'),
-            text=f"{home_ppg_overall:.2f}",
+            text=f"{home_ppg_home:.2f}",
             textposition='inside'
         ))
         fig.add_trace(go.Bar(
-            y=[away_team_name],
-            x=[away_ppg_overall],
+            y=[f"{away_team_name} (Away)"],
+            x=[away_ppg_away],
             orientation='h',
             marker=dict(color='#ef4444'),
-            text=f"{away_ppg_overall:.2f}",
+            text=f"{away_ppg_away:.2f}",
             textposition='inside'
         ))
         
@@ -775,12 +803,13 @@ with st.expander("Form Analysis", expanded=True):
             showlegend=False,
             height=150,
             margin=dict(l=0, r=0, t=0, b=0),
-            xaxis=dict(title="Points Per Game"),
+            xaxis=dict(title="Points Per Game (Current Season)"),
         )
         st.plotly_chart(fig, width = 'stretch')
     
     with col3:
-        st.metric(f"{away_team_name} PPG", f"{away_ppg_overall:.2f}")
+        st.metric(f"{away_team_name} PPG (Away)", f"{away_ppg_away:.2f}")
+        st.caption(f"{away_wins_away}W {away_draws_away}D in {away_matches_away} matches")
     
     # Last 5 results breakdown
     st.markdown("#### Last 5 Results")
@@ -797,11 +826,41 @@ with st.expander("Form Analysis", expanded=True):
     
     with col2:
         st.markdown("**Home**")
-        st.info("⚠️ Requires `last_5_results_home` column in `mart_team_form`")
+        home_home_results = parse_form_string(safe_get(home_form_5, 'last_5_results_home', ''), 5)
+        away_home_results = parse_form_string(safe_get(away_form_5, 'last_5_results_home', ''), 5)
+        
+        if home_home_results:
+            st.markdown(f"{home_team_name}: {format_form_html(home_home_results)}", unsafe_allow_html=True)
+            home_home_ppg = safe_get(home_form_5, 'points_last_5_home', 0) / 5
+            st.caption(f"PPG: {home_home_ppg:.2f}")
+        else:
+            st.info("No home form data available")
+            
+        if away_home_results:
+            st.markdown(f"{away_team_name}: {format_form_html(away_home_results)}", unsafe_allow_html=True)
+            away_home_ppg = safe_get(away_form_5, 'points_last_5_home', 0) / 5
+            st.caption(f"PPG: {away_home_ppg:.2f}")
+        else:
+            st.info("No home form data available")
     
     with col3:
         st.markdown("**Away**")
-        st.info("⚠️ Requires `last_5_results_away` column in `mart_team_form`")
+        home_away_results = parse_form_string(safe_get(home_form_5, 'last_5_results_away', ''), 5)
+        away_away_results = parse_form_string(safe_get(away_form_5, 'last_5_results_away', ''), 5)
+        
+        if home_away_results:
+            st.markdown(f"{home_team_name}: {format_form_html(home_away_results)}", unsafe_allow_html=True)
+            home_away_ppg = safe_get(home_form_5, 'points_last_5_away', 0) / 5
+            st.caption(f"PPG: {home_away_ppg:.2f}")
+        else:
+            st.info("No away form data available")
+            
+        if away_away_results:
+            st.markdown(f"{away_team_name}: {format_form_html(away_away_results)}", unsafe_allow_html=True)
+            away_away_ppg = safe_get(away_form_5, 'points_last_5_away', 0) / 5
+            st.caption(f"PPG: {away_away_ppg:.2f}")
+        else:
+            st.info("No away form data available")
 
 # ============================================================================
 # SECTION 5: GOALS SCORED COMPARISON
@@ -811,52 +870,10 @@ st.markdown("---")
 st.markdown("## ⚽ Goals Scored Comparison")
 
 with st.expander("Scoring Analysis", expanded=True):
-    # Get home/away specific scoring stats
-    home_goals_per_match = safe_get(home_btts, 'home_avg_scored', 0)
-    away_goals_per_match = safe_get(away_btts, 'away_avg_scored', 0)
-    
-    goals_diff, goals_diff_str = calculate_percentage_diff(home_goals_per_match, away_goals_per_match)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col1:
-        st.metric(f"{home_team_name} (Home)", f"{home_goals_per_match:.2f} goals/match")
-    
-    with col2:
-        st.markdown(f"### {home_team_name} scores {goals_diff_str} more")
-        
-        # Visual bar
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=['Scoring'],
-            x=[home_goals_per_match],
-            name=home_team_name,
-            orientation='h',
-            marker=dict(color='#22c55e')
-        ))
-        fig.add_trace(go.Bar(
-            y=['Scoring'],
-            x=[away_goals_per_match],
-            name=away_team_name,
-            orientation='h',
-            marker=dict(color='#ef4444')
-        ))
-        
-        fig.update_layout(
-            barmode='group',
-            height=120,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis=dict(title="Goals per Match"),
-            showlegend=True
-        )
-        st.plotly_chart(fig, width = 'stretch')
-    
-    with col3:
-        st.metric(f"{away_team_name} (Away)", f"{away_goals_per_match:.2f} goals/match")
+    # ...existing scoring comparison code...
     
     # Scored per game breakdown
     st.markdown("#### Scored Per Game")
-    st.info("⚠️ Requires new columns in database: `home_scored_over_05_pct`, `home_scored_over_15_pct`, `home_scored_over_25_pct`, `home_scored_over_35_pct`, `home_failed_to_score_pct` (and away equivalents)")
     
     # Tabs for Full-Time vs Halves
     tab1, tab2 = st.tabs(["Full-Time", "1st Half / 2nd Half"])
@@ -866,37 +883,71 @@ with st.expander("Scoring Analysis", expanded=True):
         
         with col1:
             st.markdown(f"**{home_team_name} (Home)**")
-            # Placeholder data - needs database columns
-            st.dataframe({
+            home_scoring_data = {
                 'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Failed to Score'],
-                'Percentage': ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
+                'Percentage': [
+                    format_percentage(safe_get(home_btts, 'home_scored_over_05_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_scored_over_15_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_scored_over_25_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_scored_over_35_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_failed_to_score_pct', 0))
+                ]
+            }
+            st.dataframe(home_scoring_data, hide_index=True, width='stretch')
         
         with col2:
             st.markdown(f"**{away_team_name} (Away)**")
-            st.dataframe({
+            away_scoring_data = {
                 'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Failed to Score'],
-                'Percentage': ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
+                'Percentage': [
+                    format_percentage(safe_get(away_btts, 'away_scored_over_05_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_scored_over_15_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_scored_over_25_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_scored_over_35_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_failed_to_score_pct', 0))
+                ]
+            }
+            st.dataframe(away_scoring_data, hide_index=True, width='stretch')
     
     with tab2:
-        st.info("⚠️ Requires new columns: `scored_1h_pct`, `scored_2h_pct`, `scored_both_halves_pct`, `avg_goals_1h`, `avg_goals_2h` (home/away splits)")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**{home_team_name} (Home)**")
-            st.dataframe({
-                'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
-                'Value': ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
-        
-        with col2:
-            st.markdown(f"**{away_team_name} (Away)**")
-            st.dataframe({
-                'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
-                'Value': ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
+        # Get season summary data for half-time stats
+        try:
+            home_season = get_all_team_stats(home_team_id, season_id).get('season_summary', {})
+            away_season = get_all_team_stats(away_team_id, season_id).get('season_summary', {})
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**{home_team_name} (Home)**")
+                home_halves_data = {
+                    'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
+                    'Value': [
+                        format_percentage(safe_get(home_season, 'home_scored_1h_pct', 0)),
+                        format_percentage(safe_get(home_season, 'home_scored_2h_pct', 0)),
+                        format_percentage(safe_get(home_season, 'home_scored_both_halves_pct', 0)),
+                        format_number(safe_get(home_season, 'home_avg_goals_1h', 0), 2),
+                        format_number(safe_get(home_season, 'home_avg_goals_2h', 0), 2)
+                    ]
+                }
+                st.dataframe(home_halves_data, hide_index=True, width='stretch')
+            
+            with col2:
+                st.markdown(f"**{away_team_name} (Away)**")
+                away_halves_data = {
+                    'Metric': ['Scored in 1H', 'Scored in 2H', 'Both Halves', 'Avg 1H Goals', 'Avg 2H Goals'],
+                    'Value': [
+                        format_percentage(safe_get(away_season, 'away_scored_1h_pct', 0)),
+                        format_percentage(safe_get(away_season, 'away_scored_2h_pct', 0)),
+                        format_percentage(safe_get(away_season, 'away_scored_both_halves_pct', 0)),
+                        format_number(safe_get(away_season, 'away_avg_goals_1h', 0), 2),
+                        format_number(safe_get(away_season, 'away_avg_goals_2h', 0), 2)
+                    ]
+                }
+                st.dataframe(away_halves_data, hide_index=True, width='stretch')
+                
+        except Exception as e:
+            logger.error(f"Error loading half-time scoring data: {e}")
+            st.info("⚠️ Half-time scoring data not available")
 
 # ============================================================================
 # SECTION 6: GOALS CONCEDED COMPARISON
@@ -906,50 +957,10 @@ st.markdown("---")
 st.markdown("## 🛡️ Goals Conceded Comparison")
 
 with st.expander("Defensive Analysis", expanded=True):
-    home_conceded_per_match = safe_get(home_btts, 'home_avg_conceded', 0)
-    away_conceded_per_match = safe_get(away_btts, 'away_avg_conceded', 0)
-    
-    conceded_diff, conceded_diff_str = calculate_percentage_diff(home_conceded_per_match, away_conceded_per_match)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col1:
-        st.metric(f"{home_team_name} (Home)", f"{home_conceded_per_match:.2f} goals/match")
-    
-    with col2:
-        st.markdown(f"### {home_team_name} concedes {conceded_diff_str} more")
-        
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=['Conceding'],
-            x=[home_conceded_per_match],
-            name=home_team_name,
-            orientation='h',
-            marker=dict(color='#ef4444')
-        ))
-        fig.add_trace(go.Bar(
-            y=['Conceding'],
-            x=[away_conceded_per_match],
-            name=away_team_name,
-            orientation='h',
-            marker=dict(color='#22c55e')
-        ))
-        
-        fig.update_layout(
-            barmode='group',
-            height=120,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis=dict(title="Goals Conceded per Match"),
-            showlegend=True
-        )
-        st.plotly_chart(fig, width = 'stretch')
-    
-    with col3:
-        st.metric(f"{away_team_name} (Away)", f"{away_conceded_per_match:.2f} goals/match")
+    # ...existing defensive comparison code...
     
     # Conceded per game breakdown
     st.markdown("#### Conceded Per Game")
-    st.info("⚠️ Requires new columns: `home_conceded_over_05_pct`, `home_conceded_over_15_pct`, `home_conceded_over_25_pct`, `home_conceded_over_35_pct` (and away equivalents)")
     
     tab1, tab2 = st.tabs(["Full-Time", "1st Half / 2nd Half"])
     
@@ -958,36 +969,68 @@ with st.expander("Defensive Analysis", expanded=True):
         
         with col1:
             st.markdown(f"**{home_team_name} (Home)**")
-            st.dataframe({
+            home_conceded_data = {
                 'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Clean Sheets'],
-                'Percentage': ['N/A', 'N/A', 'N/A', 'N/A', format_percentage(safe_get(home_btts, 'home_clean_sheet_pct', 0))]
-            }, hide_index=True)
+                'Percentage': [
+                    format_percentage(safe_get(home_btts, 'home_conceded_over_05_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_conceded_over_15_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_conceded_over_25_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_conceded_over_35_pct', 0)),
+                    format_percentage(safe_get(home_btts, 'home_clean_sheet_pct', 0))
+                ]
+            }
+            st.dataframe(home_conceded_data, hide_index=True, width='stretch')
         
         with col2:
             st.markdown(f"**{away_team_name} (Away)**")
-            st.dataframe({
+            away_conceded_data = {
                 'Metric': ['Over 0.5', 'Over 1.5', 'Over 2.5', 'Over 3.5', 'Clean Sheets'],
-                'Percentage': ['N/A', 'N/A', 'N/A', 'N/A', format_percentage(safe_get(away_btts, 'away_clean_sheet_pct', 0))]
-            }, hide_index=True)
+                'Percentage': [
+                    format_percentage(safe_get(away_btts, 'away_conceded_over_05_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_conceded_over_15_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_conceded_over_25_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_conceded_over_35_pct', 0)),
+                    format_percentage(safe_get(away_btts, 'away_clean_sheet_pct', 0))
+                ]
+            }
+            st.dataframe(away_conceded_data, hide_index=True, width='stretch')
     
     with tab2:
-        st.info("⚠️ Requires new columns: `clean_sheet_1h_pct`, `clean_sheet_2h_pct`, `avg_conceded_1h`, `avg_conceded_2h` (home/away splits)")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**{home_team_name} (Home)**")
-            st.dataframe({
-                'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
-                'Value': ['N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
-        
-        with col2:
-            st.markdown(f"**{away_team_name} (Away)**")
-            st.dataframe({
-                'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
-                'Value': ['N/A', 'N/A', 'N/A', 'N/A']
-            }, hide_index=True)
+        try:
+            home_season = get_all_team_stats(home_team_id, season_id).get('season_summary', {})
+            away_season = get_all_team_stats(away_team_id, season_id).get('season_summary', {})
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**{home_team_name} (Home)**")
+                home_def_halves = {
+                    'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
+                    'Value': [
+                        format_percentage(safe_get(home_season, 'home_clean_sheet_1h_pct', 0)),
+                        format_percentage(safe_get(home_season, 'home_clean_sheet_2h_pct', 0)),
+                        format_number(safe_get(home_season, 'home_avg_conceded_1h', 0), 2),
+                        format_number(safe_get(home_season, 'home_avg_conceded_2h', 0), 2)
+                    ]
+                }
+                st.dataframe(home_def_halves, hide_index=True, width='stretch')
+            
+            with col2:
+                st.markdown(f"**{away_team_name} (Away)**")
+                away_def_halves = {
+                    'Metric': ['1H Clean Sheet', '2H Clean Sheet', 'Avg 1H Conceded', 'Avg 2H Conceded'],
+                    'Value': [
+                        format_percentage(safe_get(away_season, 'away_clean_sheet_1h_pct', 0)),
+                        format_percentage(safe_get(away_season, 'away_clean_sheet_2h_pct', 0)),
+                        format_number(safe_get(away_season, 'away_avg_conceded_1h', 0), 2),
+                        format_number(safe_get(away_season, 'away_avg_conceded_2h', 0), 2)
+                    ]
+                }
+                st.dataframe(away_def_halves, hide_index=True, width='stretch')
+                
+        except Exception as e:
+            logger.error(f"Error loading half-time defensive data: {e}")
+            st.info("⚠️ Half-time defensive data not available")
 
 # ============================================================================
 # SECTION 7: WILL TEAMS SCORE?
@@ -998,11 +1041,11 @@ st.markdown("## 🎯 Will Teams Score?")
 
 with st.expander("Scoring Probability", expanded=True):
     # Home team scoring probability
-    home_scored_pct = 100 - safe_get(home_btts, 'home_clean_sheet_pct', 0)  # % of home matches where they scored
+    home_scored_pct = safe_get(home_btts, 'home_scored_over_05_pct', 0)  # % of home matches where they scored
     away_cs_pct = safe_get(away_btts, 'away_clean_sheet_pct', 0)  # % of away matches where opponent didn't score
     
     # Away team scoring probability
-    away_scored_pct = 100 - safe_get(away_btts, 'away_clean_sheet_pct', 0)
+    away_scored_pct = safe_get(away_btts, 'away_scored_over_05_pct', 0)
     home_cs_pct = safe_get(home_btts, 'home_clean_sheet_pct', 0)
     
     # Calculate scoring chances

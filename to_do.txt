@@ -1,2 +1,3 @@
-
-3. Start working on team comparision page.
+1. Finish developing compare page.
+2. Apply rectangle tabs on teams and fixtures pages (coloring based on tresholds)
+3. Find out how fast is the page running on AWS with new features.

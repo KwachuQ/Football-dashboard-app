@@ -222,6 +222,7 @@ def get_all_team_stats(
             'discipline': TeamDiscipline,
             'overview': TeamOverview,
             'btts': TeamBttsAnalysis,
+            'season_summary': TeamSeasonSummary,
         }
         
         results = {}
@@ -706,7 +707,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
             'overall_win_pct': float(getattr(result, 'overall_win_pct')) if getattr(result, 'overall_win_pct') is not None else None,
             'overall_btts_pct': float(getattr(result, 'overall_btts_pct')) if getattr(result, 'overall_btts_pct') is not None else None,
             'overall_clean_sheet_pct': float(getattr(result, 'overall_clean_sheet_pct')) if getattr(result, 'overall_clean_sheet_pct') is not None else None,
-            'overall_avg_goals': float(getattr(result, 'overall_avg_goals_per_match')) if getattr(result, 'overall_avg_goals_per_match') is not None else None,
+            'overall_avg_goals_per_match': float(getattr(result, 'overall_avg_goals_per_match')) if getattr(result, 'overall_avg_goals_per_match') is not None else None,
             'overall_avg_scored': float(getattr(result, 'overall_avg_scored')) if getattr(result, 'overall_avg_scored') is not None else None,
             'overall_avg_conceded': float(getattr(result, 'overall_avg_conceded')) if getattr(result, 'overall_avg_conceded') is not None else None,
             # Home stats
@@ -714,7 +715,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
             'home_win_pct': float(getattr(result, 'home_win_pct')) if getattr(result, 'home_win_pct') is not None else None,
             'home_btts_pct': float(getattr(result, 'home_btts_pct')) if getattr(result, 'home_btts_pct') is not None else None,
             'home_clean_sheet_pct': float(getattr(result, 'home_clean_sheet_pct')) if getattr(result, 'home_clean_sheet_pct') is not None else None,
-            'home_avg_goals': float(getattr(result, 'home_avg_goals_per_match')) if getattr(result, 'home_avg_goals_per_match') is not None else None,
+            'home_avg_goals_per_match': float(getattr(result, 'home_avg_goals_per_match')) if getattr(result, 'home_avg_goals_per_match') is not None else None,
             'home_avg_scored': float(getattr(result, 'home_avg_scored')) if getattr(result, 'home_avg_scored') is not None else None,
             'home_avg_conceded': float(getattr(result, 'home_avg_conceded')) if getattr(result, 'home_avg_conceded') is not None else None,
             'home_avg_xg': float(getattr(result, 'home_avg_xg')) if getattr(result, 'home_avg_xg') is not None else None,
@@ -724,7 +725,8 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
             'away_win_pct': float(getattr(result, 'away_win_pct')) if getattr(result, 'away_win_pct') is not None else None,
             'away_btts_pct': float(getattr(result, 'away_btts_pct')) if getattr(result, 'away_btts_pct') is not None else None,
             'away_clean_sheet_pct': float(getattr(result, 'away_clean_sheet_pct')) if getattr(result, 'away_clean_sheet_pct') is not None else None,
-            'away_avg_goals': float(getattr(result, 'away_avg_goals_per_match')) if getattr(result, 'away_avg_goals_per_match') is not None else None,
+            'away_avg_goals_per_match': float(getattr(result, 'away_avg_goals_per_match')) if getattr(result, 'away_avg_goals_per_match') is not None else None,
+            'away_avg_scored': float(getattr(result, 'away_avg_scored')) if getattr(result, 'away_avg_scored') is not None else None,
             'away_avg_conceded': float(getattr(result, 'away_avg_conceded')) if getattr(result, 'away_avg_conceded') is not None else None,
             'away_avg_xg': float(getattr(result, 'away_avg_xg')) if getattr(result, 'away_avg_xg') is not None else None,
             'away_avg_xga': float(getattr(result, 'away_avg_xga')) if getattr(result, 'away_avg_xga') is not None else None,
