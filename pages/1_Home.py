@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import logging
 
-# Ensure project root is importable
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+# # Ensure project root is importable
+# PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+# if PROJECT_ROOT not in sys.path:
+#     sys.path.append(PROJECT_ROOT)
 
 from services.db import test_connection, get_engine
 from services.queries import get_data_freshness, get_all_seasons

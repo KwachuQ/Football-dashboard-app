@@ -273,9 +273,9 @@ class CacheWarmer:
             
             # Warm upcoming fixtures
             if season_id:
-                get_upcoming_fixtures(season_id=season_id, days_ahead=7, limit=20)
+                get_upcoming_fixtures(season_id=season_id, limit=20)
             else:
-                get_upcoming_fixtures(days_ahead=7, limit=20)
+                get_upcoming_fixtures(limit=20)
             
             logger.info("Cache warm-up completed")
             
