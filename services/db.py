@@ -124,9 +124,15 @@ DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
 encoded_password = quote_plus(DB_PASSWORD or "")
 
 # Connection pool settings
-POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
-MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
-POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+def _int_env(name: str, default: int) -> int:
+    val = os.getenv(name)
+    if val is None or str(val).lower() == "none" or str(val).strip() == "":
+        return int(default)
+    return int(val)
+
+POOL_SIZE = _int_env("DB_POOL_SIZE", 5)
+MAX_OVERFLOW = _int_env("DB_MAX_OVERFLOW", 10)
+POOL_RECYCLE = _int_env("DB_POOL_RECYCLE", 1800)
 
 # Build connection string
 DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSL_MODE}"

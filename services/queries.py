@@ -7,18 +7,18 @@ import pandas as pd
 from services.db import get_engine
 from services.cache import cache_query_result
 import logging
-from src.models.team_overview import TeamOverview
-from src.models.team_form import TeamForm
-from src.models.team_season_summary import TeamSeasonSummary
-from src.models.team_attack import TeamAttack
-from src.models.team_defense import TeamDefense
-from src.models.team_possession import TeamPossession
-from src.models.team_discipline import TeamDiscipline
-from src.models.head_to_head import HeadToHead
-from src.models.upcoming_predictions import UpcomingPredictions
-from src.models.team_btts_analysis import TeamBttsAnalysis
-from src.models.league_averages import LeagueAverages
-from src.models.fact_match import FactMatch
+# from src.models.team_overview import TeamOverview
+# from src.models.team_form import TeamForm
+# from src.models.team_season_summary import TeamSeasonSummary
+# from src.models.team_attack import TeamAttack
+# from src.models.team_defense import TeamDefense
+# from src.models.team_possession import TeamPossession
+# from src.models.team_discipline import TeamDiscipline
+# from src.models.head_to_head import HeadToHead
+# from src.models.upcoming_predictions import UpcomingPredictions
+# from src.models.team_btts_analysis import TeamBttsAnalysis
+# from src.models.league_averages import LeagueAverages
+# from src.models.fact_match import FactMatch
 from services.db import get_db
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,13 @@ def get_all_team_stats(
     team_id: int,
     season_id: Optional[int] = None
 ) -> Dict[str, Dict[str, Any]]:
+    from src.models.team_attack import TeamAttack
+    from src.models.team_defense import TeamDefense
+    from src.models.team_possession import TeamPossession
+    from src.models.team_discipline import TeamDiscipline
+    from src.models.team_overview import TeamOverview
+    from src.models.team_btts_analysis import TeamBttsAnalysis
+    from src.models.team_season_summary import TeamSeasonSummary
     """
     Get all team statistics categories in a single database call.
     
@@ -261,6 +268,13 @@ def get_team_stats(
     season_id: Optional[int] = None,
     team_id: Optional[int] = None
 ) -> Dict[str, Any] | pd.DataFrame:
+    from src.models.team_attack import TeamAttack
+    from src.models.team_defense import TeamDefense
+    from src.models.team_possession import TeamPossession
+    from src.models.team_discipline import TeamDiscipline
+    from src.models.team_overview import TeamOverview
+    from src.models.team_btts_analysis import TeamBttsAnalysis
+    from src.models.team_season_summary import TeamSeasonSummary
     """
     Get team statistics by category.
     
@@ -361,6 +375,7 @@ def get_team_stats(
 def get_league_averages(
     season_id: int
 ) -> Dict[str, Any]:
+    from src.models.league_averages import LeagueAverages
     """
     Get league average statistics for a given season.
     
@@ -406,6 +421,7 @@ def get_head_to_head(
     team2_id: int,
     limit: int = 10
 ) -> Dict[str, Any]:
+    from src.models.head_to_head import HeadToHead
 
     """Get head-to-head statistics between two teams.
     
@@ -477,6 +493,7 @@ def get_h2h_results(
     team_id_2: int,
     limit: int = 5
 ) -> pd.DataFrame:
+    from src.models.fact_match import FactMatch
     """
     Get actual head-to-head match results between two teams from fact_match table.
     Finds all matches where these two teams played each other, regardless of home/away.
@@ -580,6 +597,8 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
     Returns:
         DataFrame with prediction details for requested matches
     """
+    from src.models.upcoming_predictions import UpcomingPredictions
+
     db = next(get_db())
     try:
         query = select(UpcomingPredictions).where(
@@ -625,6 +644,8 @@ def get_league_standings(season_id: int) -> pd.DataFrame:
     Returns:
         DataFrame with team standings sorted by points descending
     """
+    from src.models.team_overview import TeamOverview
+
     db = next(get_db())
     try:
         query = select(
@@ -676,6 +697,8 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
     Returns:
         Dictionary with BTTS statistics (overall, home, away)
     """
+    from src.models.team_btts_analysis import TeamBttsAnalysis
+
     db = next(get_db())
     try:
         query = select(TeamBttsAnalysis).where(TeamBttsAnalysis.team_id == team_id)
@@ -809,6 +832,8 @@ def get_all_seasons() -> pd.DataFrame:
     Returns:
         DataFrame with season_id, season_name, season_year
     """
+    from src.models.team_overview import TeamOverview
+
     db = next(get_db())
     try:
         query = select(
@@ -937,6 +962,8 @@ def get_team_names() -> pd.DataFrame:
     Returns:
         DataFrame with team_id and team_name
     """
+    from src.models.team_overview import TeamOverview
+    
     db = next(get_db())
     try:
         query = select(

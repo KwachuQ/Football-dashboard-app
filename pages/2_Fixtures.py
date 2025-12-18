@@ -3,19 +3,19 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import sys
 import os
-from components.filters import date_range_filter
+# from components.filters import date_range_filter
 
-#Ensure project root is importable
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+# #Ensure project root is importable
+# PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+# if PROJECT_ROOT not in sys.path:
+#     sys.path.append(PROJECT_ROOT)
 
-from services.queries import (
-    get_upcoming_fixtures, 
-    get_match_predictions,
-    get_team_form,
-    get_head_to_head
-)
+# from services.queries import (
+#     get_upcoming_fixtures, 
+#     get_match_predictions,
+#     get_team_form,
+#     get_head_to_head
+# )
 
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
@@ -49,6 +49,8 @@ with col2:
 # Sidebar filters
 # ============================================================================
 with st.sidebar:
+    from components.filters import date_range_filter
+
     st.header("Filters")
     
     today = date.today()
@@ -94,6 +96,13 @@ try:
     
     with st.spinner("Loading fixtures..."):
         # Update your query function to accept start_date and end_date
+        from services.queries import (
+            get_upcoming_fixtures, 
+            get_match_predictions,
+            get_team_form,
+            get_head_to_head
+        )
+        
         fixtures_df = get_upcoming_fixtures(
             start_date=start_date,
             end_date=end_date,

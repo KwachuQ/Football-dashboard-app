@@ -14,17 +14,17 @@ from mplsoccer import Radar
 import warnings
 
 
-# Import existing components and services
-from components.filters import team_selector, home_away_toggle, get_active_league_from_config
-from services.queries import get_all_seasons, get_league_standings, get_team_form, get_all_team_stats, get_league_averages, get_team_stats
-from services.transforms import (
-    calculate_win_rate, 
-    calculate_form_sequence,
-    calculate_league_stats_and_percentiles,
-    calculate_radar_scales,
-    normalize_for_radar
-)
-from services.db import get_engine
+# # Import existing components and services
+# from components.filters import team_selector, home_away_toggle, get_active_league_from_config
+# from services.queries import get_all_seasons, get_league_standings, get_team_form, get_all_team_stats, get_league_averages, get_team_stats
+# from services.transforms import (
+#     calculate_win_rate, 
+#     calculate_form_sequence,
+#     calculate_league_stats_and_percentiles,
+#     calculate_radar_scales,
+#     normalize_for_radar
+# )
+# from services.db import get_engine
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -445,6 +445,8 @@ with st.sidebar:
     
     # Season selector
     try:
+        from services.queries import get_all_seasons
+
         seasons_df = get_all_seasons()
         if not seasons_df.empty:
             season_options = seasons_df['season_name'].tolist()
@@ -473,6 +475,8 @@ with st.sidebar:
 
 # Load league standings for team selection
     try:
+        from services.queries import get_league_standings, get_all_team_stats, get_league_averages
+
         standings_df = get_league_standings(selected_season_id)
     
         if standings_df.empty:
@@ -488,6 +492,8 @@ with st.sidebar:
         standings_df['position'] = standings_df.index + 1
 
         # Team selector
+        from components.filters import team_selector
+
         selected_team_id = team_selector(
             df=standings_df,
             label="Select Team",
@@ -521,15 +527,15 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Home/Away toggle
-    location = home_away_toggle(
-        label="Filter by location",
-        key="teams_location",
-        default="all"
-    )
+    # # Home/Away toggle
+    # location = home_away_toggle(
+    #     label="Filter by location",
+    #     key="teams_location",
+    #     default="all"
+    # )
     
-    if location != "all":
-        st.info("⚠️ Home/Away filtering will be available once per-match data is integrated.")
+    # if location != "all":
+    #     st.info("⚠️ Home/Away filtering will be available once per-match data is integrated.")
 
 # ============================================================================
 # TEAM SELECTOR

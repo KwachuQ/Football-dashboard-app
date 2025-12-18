@@ -8,14 +8,14 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import logging
 
-# Ensure project root is importable
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+# # Ensure project root is importable
+# PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+# if PROJECT_ROOT not in sys.path:
+#     sys.path.append(PROJECT_ROOT)
 
-from services.db import test_connection, get_engine
-from services.queries import get_data_freshness, get_all_seasons
-from services.cache import CacheManager, CacheMonitor
+# from services.db import get_db, test_connection , get_engine
+# from services.queries import get_data_freshness, get_all_seasons
+# from services.cache import CacheManager, CacheMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,11 +35,13 @@ st.set_page_config(
     page_icon="⚽",
     layout="wide"
 )
+def _get_project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 # Helper functions
 @st.cache_data(ttl=3600)
 def load_league_config() -> Dict[str, Any]:
-    config_path = Path(PROJECT_ROOT) / "config" / "league_config.yaml"
+    config_path = _get_project_root() / "config" / "league_config.yaml"
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
@@ -122,6 +124,7 @@ season_id = active_season.get('season_id')
 
 with col1:
     try:
+        from services.queries import get_all_seasons
         seasons_df = get_all_seasons()
         total_seasons = len(seasons_df) if not seasons_df.empty else 0
         st.metric("Total Seasons", total_seasons)
@@ -166,47 +169,49 @@ with col2:
         st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
     except Exception as e:
         st.warning("Cache monitoring unavailable")
-# # Data Freshness
-# st.header("Data Freshness")
 
-# try:
-#     freshness_df = get_data_freshness()
+# Data Freshness
+st.header("Data Freshness")
+
+try:
+    from services.queries import get_data_freshness
+    freshness_df = get_data_freshness()
     
-#     if not freshness_df.empty:
-#         freshness_df['data_age'] = freshness_df.apply(
-#             lambda row: calculate_data_age(row.get('last_updated')), 
-#             axis=1
-#         )
+    if not freshness_df.empty:
+        freshness_df['data_age'] = freshness_df.apply(
+            lambda row: calculate_data_age(row.get('last_updated')), 
+            axis=1
+        )
         
-#         def get_status(row):
-#             if row['row_count'] == 0 or row['row_count'] is None:
-#                 return "🔴 Empty"
+        def get_status(row):
+            if row['row_count'] == 0 or row['row_count'] is None:
+                return "🔴 Empty"
             
-#             last_updated = row.get('last_updated')
-#             if last_updated is None or pd.isna(last_updated):
-#                 return "⚪ Unknown"
+            last_updated = row.get('last_updated')
+            if last_updated is None or pd.isna(last_updated):
+                return "⚪ Unknown"
             
-#             age = datetime.now() - last_updated
+            age = datetime.now() - last_updated
             
-#             if age < timedelta(minutes=5):
-#                 return "🟢 Fresh"
-#             elif age < timedelta(hours=1):
-#                 return "🟡 Recent"
-#             elif age < timedelta(days=1):
-#                 return "🟠 Aging"
-#             else:
-#                 return "🔴 Stale"
+            if age < timedelta(minutes=5):
+                return "🟢 Fresh"
+            elif age < timedelta(hours=1):
+                return "🟡 Recent"
+            elif age < timedelta(days=1):
+                return "🟠 Aging"
+            else:
+                return "🔴 Stale"
         
-#         freshness_df['status'] = freshness_df.apply(get_status, axis=1)
+        freshness_df['status'] = freshness_df.apply(get_status, axis=1)
         
-#         st.dataframe(
-#             freshness_df[['table_name', 'row_count', 'last_updated', 'data_age', 'status']],
-#             width='stretch',
-#             hide_index=True
-#         )
-#     else:
-#         st.warning("No data freshness information available")
+        st.dataframe(
+            freshness_df[['table_name', 'row_count', 'last_updated', 'data_age', 'status']],
+            width='stretch',
+            hide_index=True
+        )
+    else:
+        st.warning("No data freshness information available")
 
-# except Exception as e:
-#     logger.error(f"Failed to get data freshness: {e}")
-#     st.error(f"Error loading data freshness: {e}")
+except Exception as e:
+    logger.error(f"Failed to get data freshness: {e}")
+    st.error(f"Error loading data freshness: {e}")
