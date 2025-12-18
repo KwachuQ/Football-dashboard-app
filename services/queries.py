@@ -897,58 +897,49 @@ def get_all_seasons() -> pd.DataFrame:
 
 from services.cache import cache_query_result
 
-@cache_query_result(ttl=300)  # Cache for 5 minutes
-def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: Optional[int] = None) -> int:
-    """
-    Get count of upcoming fixtures.
+@cache_query_result(ttl=300)
+def get_upcoming_fixtures_count(
+    tournament_id: Optional[int] = None, 
+    season_id: Optional[int] = None
+) -> int:
+    """Get count of upcoming fixtures with error handling."""
+    from services.db import get_db
     
-    Args:
-        tournament_id: Optional tournament ID to filter by
-        season_id: Optional season ID to filter by
+    if tournament_id is not None:
+        tournament_id = _safe_int(tournament_id)
+    if season_id is not None:
+        season_id = _safe_int(season_id)
     
-    Returns:
-        Count of upcoming fixtures
-    """
-    from services.db import get_engine
-    
-
+    db = next(get_db())
     try:
-        engine = get_engine()
-        from sqlalchemy import text
+        today = datetime.now().date()
         
-        # Build query dynamically
         sql = """
-        SELECT COUNT(*) as fixture_count
-        FROM gold.mart_upcoming_fixtures
-        WHERE start_timestamp > CURRENT_TIMESTAMP
-          AND status_type IN ('notstarted', 'scheduled')
+            SELECT COUNT(*) 
+            FROM gold.mart_upcoming_fixtures
+            WHERE start_timestamp >= :today
+              AND status_type IN ('notstarted', 'scheduled')
         """
         
-        # Build params dict - don't include datetime in params
-        params = {}
+        # Explicitly type the params dictionary to allow mixed types
+        params: Dict[str, Any] = {'today': today}
         
-        if tournament_id is not None:
-            sql += " AND tournament_id = :tournament_id"
-            params['tournament_id'] = _safe_int(tournament_id)       
-        if season_id is not None:
+        if season_id is not None:  # More explicit None check
             sql += " AND season_id = :season_id"
-            params['season_id'] = _safe_int(season_id)
+            params['season_id'] = season_id
         
-        with engine.connect() as conn:
-            result = conn.execute(text(sql), params)
-            row = result.fetchone()
-            
-            if row and row[0] is not None and str(row[0]).lower() != 'none':
-                try:
-                    return int(row[0])
-                except ValueError:
-                    logger.warning(f"Invalid count value: {row[0]}")
-                    return 0
-            return 0
-    
+        if tournament_id is not None:  # More explicit None check
+            sql += " AND tournament_id = :tournament_id"
+            params['tournament_id'] = tournament_id
+        
+        result = db.execute(text(sql), params).scalar()
+        return _safe_int(result, default=0)  # Safe default
+        
     except Exception as e:
         logger.error(f"Error getting upcoming fixtures count: {e}")
-        return 0
+        return 0  # Return 0 instead of crashing
+    finally:
+        db.close()
 
 @cache_query_result(ttl=600)
 def get_upcoming_fixtures_list(
