@@ -190,11 +190,19 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
         result = db.execute(query).scalar_one_or_none()
         
         if result:
+
+            # Get the form string from the database
+            form_string = getattr(result, f'last_{suffix}_results', '')
+            
+            # Debug log to see what we're getting
+            logger.info(f"Team {team_id} form: {form_string} (type: {type(form_string)})")
+
             return {
                 'team_id': result.team_id,
                 'team_name': result.team_name,
                 'season_id': result.season_id,
                 'season_name': result.season_name,
+                'last_5_results': form_string if form_string else '',
                 # Dynamic keys based on suffix
                 'last_results': getattr(result, f'last_{suffix}_results', ''),
                 'points_last': getattr(result, f'points_last_{suffix}', 0),
@@ -209,8 +217,20 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
                 'points_last_5_away': getattr(result, 'points_last_5_away', 0),
             }
         
-        return {}
+        logger.warning(f"No form data found for team_id={team_id}")
+        return {
+            'team_id': team_id,
+            'last_5_results': '',  # Return empty string instead of None
+            'last_results': ''
+        }
         
+    except Exception as e:
+        logger.error(f"Error getting team form for team_id={team_id}: {e}")
+        return {
+            'team_id': team_id,
+            'last_5_results': '',  # Return empty string on error
+            'last_results': ''
+        }
     finally:
         db.close()
 
