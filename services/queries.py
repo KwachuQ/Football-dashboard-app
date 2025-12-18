@@ -61,6 +61,12 @@ def get_upcoming_fixtures(
     from sqlalchemy import text
     from services.db import get_db
 
+    limit = _safe_int(limit, default=50)
+    if season_id is not None:
+        season_id = _safe_int(season_id)
+    if tournament_id is not None:
+        tournament_id = _safe_int(tournament_id)
+        
     db = next(get_db())
     try:
          # Default date range if not provided
