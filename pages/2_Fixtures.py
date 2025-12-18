@@ -159,10 +159,6 @@ try:
                 # Extract last_5_results from the returned dict
                 last_5 = form_data.get('last_5_results')
 
-                # Debug logging
-                logger.info(f"Team {team_id} - Form data: {form_data}")
-                logger.info(f"Team {team_id} - last_5: {last_5} (type: {type(last_5)})")
-
                 # Handle different cases
                 if last_5 is None:
                     logger.warning(f"Team {team_id} - last_5_results is None")
