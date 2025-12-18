@@ -7,7 +7,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 class DatabaseSettings(BaseSettings):
-    # AWS Streamlit uses st.secrets, not environment variables
     POSTGRES_USER: str = Field(..., min_length=1)
     POSTGRES_PASSWORD: SecretStr = Field(...)
     POSTGRES_DB: str = Field(..., min_length=1)
@@ -15,15 +14,16 @@ class DatabaseSettings(BaseSettings):
     POSTGRES_PORT: int = Field(default=5432, ge=1, le=65535)
     DATABASE_URL: Optional[str] = Field(default=None)
     
-    DB_POOL_SIZE: int = Field(default=5, ge=1, le=50)
-    DB_MAX_OVERFLOW: int = Field(default=10, ge=0, le=100)
+    DB_POOL_SIZE: int = Field(default=3, ge=1, le=50)
+    DB_MAX_OVERFLOW: int = Field(default=5, ge=0, le=100)
     DB_POOL_RECYCLE: int = Field(default=1800, ge=300)
     SQLALCHEMY_ECHO: bool = Field(default=False)
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True
+    }
 
     def build_sqlalchemy_url(self) -> str:
         if self.DATABASE_URL:
@@ -35,59 +35,92 @@ class DatabaseSettings(BaseSettings):
             f"?sslmode=require"
         )
 
+
 def get_db_settings() -> DatabaseSettings:
-    """Load database settings from environment or Streamlit secrets."""
-    # Try Streamlit secrets first (AWS deployment)
+    """Load database settings from Streamlit secrets or environment variables."""
+    
+    # Try Streamlit secrets FIRST (AWS deployment)
     try:
         import streamlit as st
-        if hasattr(st, 'secrets') and 'database' in st.secrets:
-            logger.info("Loading database settings from Streamlit secrets")
-            return DatabaseSettings(**st.secrets['database'])
+        
+        # Check if secrets exist and have database section
+        if hasattr(st, 'secrets'):
+            secrets_dict = dict(st.secrets)
+            
+            if 'database' in secrets_dict:
+                logger.info("✅ Loading database settings from Streamlit secrets")
+                db_secrets = secrets_dict['database']
+                
+                # Convert to dict if needed
+                if hasattr(db_secrets, '_dict'):
+                    db_secrets = db_secrets._dict
+                elif hasattr(db_secrets, 'to_dict'):
+                    db_secrets = db_secrets.to_dict()
+                else:
+                    db_secrets = dict(db_secrets)
+                
+                # Create settings from secrets
+                return DatabaseSettings(**db_secrets)
+            else:
+                logger.warning("⚠️ Streamlit secrets found but no 'database' section")
+        else:
+            logger.warning("⚠️ Streamlit imported but st.secrets not available")
+            
     except ImportError:
-        # Streamlit not available (testing/CLI context)
-        pass
+        logger.info("ℹ️ Streamlit not available (non-Streamlit context)")
     except ValidationError as e:
-        logger.error(f"Invalid Streamlit secrets configuration: {e}")
-        raise
+        logger.error(f"❌ Invalid Streamlit secrets format: {e}")
+        raise RuntimeError(
+            "Streamlit secrets are configured but invalid. "
+            "Please check your secrets.toml format."
+        ) from e
     except Exception as e:
-        logger.warning(f"Failed to load Streamlit secrets: {e}")
+        logger.warning(f"⚠️ Could not load Streamlit secrets: {e}")
     
-    # Fall back to environment variables (.env file)
+    # Fall back to environment variables (.env file for local development)
+    logger.info("ℹ️ Falling back to environment variables")
+    
     try:
-        logger.info("Loading database settings from environment variables")
-        
-        # Get environment variables
-        postgres_user = os.getenv("POSTGRES_USER", "")
-        postgres_password = os.getenv("POSTGRES_PASSWORD", "")
-        postgres_db = os.getenv("POSTGRES_DB", "")
+        # Get environment variables with type checking
+        postgres_user = os.getenv("POSTGRES_USER")
+        postgres_password = os.getenv("POSTGRES_PASSWORD")
+        postgres_db = os.getenv("POSTGRES_DB")
         postgres_host = os.getenv("POSTGRES_HOST", "localhost")
-        postgres_port = int(os.getenv("POSTGRES_PORT", "5432"))
+        postgres_port = os.getenv("POSTGRES_PORT", "5432")
         
-        # Validate required fields before creating settings
+        # Check if required env vars exist
         if not postgres_user or not postgres_password or not postgres_db:
+            missing = []
+            if not postgres_user:
+                missing.append("POSTGRES_USER")
+            if not postgres_password:
+                missing.append("POSTGRES_PASSWORD")
+            if not postgres_db:
+                missing.append("POSTGRES_DB")
+                
             raise ValueError(
-                "Missing required database credentials: "
-                f"POSTGRES_USER={'✓' if postgres_user else '✗'}, "
-                f"POSTGRES_PASSWORD={'✓' if postgres_password else '✗'}, "
-                f"POSTGRES_DB={'✓' if postgres_db else '✗'}"
+                f"Missing required environment variables: {', '.join(missing)}\n"
+                "Please configure database credentials in Streamlit secrets or .env file."
             )
         
-        # Create DatabaseSettings with SecretStr for password
-        settings = DatabaseSettings(
+        # Create settings from environment (now guaranteed non-None)
+        return DatabaseSettings(
             POSTGRES_USER=postgres_user,
-            POSTGRES_PASSWORD=SecretStr(postgres_password),  # Wrap in SecretStr
+            POSTGRES_PASSWORD=SecretStr(postgres_password),
             POSTGRES_DB=postgres_db,
             POSTGRES_HOST=postgres_host,
-            POSTGRES_PORT=postgres_port,
+            POSTGRES_PORT=int(postgres_port),
         )
-        return settings
+        
     except (ValidationError, ValueError) as e:
         logger.error(
-            "Database configuration missing or invalid! "
-            "Ensure .env file exists or Streamlit secrets are configured."
+            "❌ Database configuration failed!\n"
+            "Please configure credentials in:\n"
+            "  - Streamlit Cloud: Settings → Secrets\n"
+            "  - Local development: .env file"
         )
-        logger.error(f"Configuration errors: {e}")
+        logger.error(f"Error details: {e}")
         raise RuntimeError(
             "Database configuration not found. "
-            "Please configure database credentials in .env or Streamlit secrets."
+            "Configure credentials in Streamlit secrets or .env file."
         ) from e
