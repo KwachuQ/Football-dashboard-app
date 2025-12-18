@@ -100,7 +100,43 @@ class CacheManager:
             logger.error(f"Failed to clear all caches: {e}")
             return False
 
-
+class CacheLazyWarmer:
+    """Pre-populate cache with commonly used data."""
+    
+    @staticmethod
+    def warm_common_queries(season_id: Optional[int] = None):
+        """
+        Pre-load common queries into cache.
+        
+        Args:
+            season_id: Optional season ID to warm cache for
+        """
+        # Move the import here (lazy import) to avoid circular dependency
+        from services.queries import (
+            get_all_seasons,
+            get_data_freshness,
+            get_upcoming_fixtures,
+        )
+        
+        try:
+            logger.info("Starting cache warm-up...")
+            
+            # Warm season data
+            get_all_seasons()
+            
+            # Warm freshness data
+            get_data_freshness()
+            
+            # Warm upcoming fixtures
+            if season_id:
+                get_upcoming_fixtures(season_id=season_id, limit=20)
+            else:
+                get_upcoming_fixtures(limit=20)
+            
+            logger.info("Cache warm-up completed")
+            
+        except Exception as e:
+            logger.error(f"Error during cache warm-up: {e}")
 # ============================================================================
 # Cache Monitoring
 # ============================================================================

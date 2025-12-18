@@ -861,8 +861,12 @@ def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: 
             result = conn.execute(text(sql), params)
             row = result.fetchone()
             
-            if row and row[0] is not None:
-                return int(row[0])
+            if row and row[0] is not None and str(row[0]).lower() != 'none':
+                try:
+                    return int(row[0])
+                except ValueError:
+                    logger.warning(f"Invalid count value: {row[0]}")
+                    return 0
             return 0
     
     except Exception as e:
