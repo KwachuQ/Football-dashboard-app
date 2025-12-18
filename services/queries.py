@@ -817,52 +817,52 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
         db.close()
 
 
-def get_data_freshness() -> pd.DataFrame:
-    """
-    Check data freshness across all gold mart tables.
+# def get_data_freshness() -> pd.DataFrame:
+#     """
+#     Check data freshness across all gold mart tables.
     
-    Returns:
-        DataFrame with table_name and last_updated timestamp
-    """
-    # Note: Your tables don't have updated_at columns based on the schema.
-    # This function returns a placeholder. You'll need to add updated_at columns
-    # to your DBT models or track freshness via a metadata table.
-    from services.db import get_db
+#     Returns:
+#         DataFrame with table_name and last_updated timestamp
+#     """
+#     # Note: Your tables don't have updated_at columns based on the schema.
+#     # This function returns a placeholder. You'll need to add updated_at columns
+#     # to your DBT models or track freshness via a metadata table.
+#     from services.db import get_db
 
-    tables = [
-        'mart_team_overview',
-        'mart_team_form',
-        'mart_team_attack',
-        'mart_team_defense',
-        'mart_team_possession',
-        'mart_team_discipline',
-        'mart_match_predictions',
-        'mart_head_to_head',
-        'mart_team_season_summary',
-        'mart_team_btts_analysis'
-    ]
+#     tables = [
+#         'mart_team_overview',
+#         'mart_team_form',
+#         'mart_team_attack',
+#         'mart_team_defense',
+#         'mart_team_possession',
+#         'mart_team_discipline',
+#         'mart_match_predictions',
+#         'mart_head_to_head',
+#         'mart_team_season_summary',
+#         'mart_team_btts_analysis'
+#     ]
     
-    freshness_data = []
-    db = next(get_db())
+#     freshness_data = []
+#     db = next(get_db())
     
-    try:
-        for table in tables:
-            # Get row count as a proxy for data presence
-            # In production, add an updated_at column to track actual freshness
-            from sqlalchemy import text
-            result = db.execute(text(f"SELECT COUNT(*) as count FROM gold.{table}"))
-            count = result.scalar()
+#     try:
+#         for table in tables:
+#             # Get row count as a proxy for data presence
+#             # In production, add an updated_at column to track actual freshness
+#             from sqlalchemy import text
+#             result = db.execute(text(f"SELECT COUNT(*) as count FROM gold.{table}"))
+#             count = result.scalar()
             
-            freshness_data.append({
-                'table_name': table,
-                'row_count': count,
-                'last_updated': None,  # Placeholder - add updated_at column to tables
-                'status': 'OK' if count is not None and count > 0 else 'EMPTY'
-            })
+#             freshness_data.append({
+#                 'table_name': table,
+#                 'row_count': count,
+#                 'last_updated': None,  # Placeholder - add updated_at column to tables
+#                 'status': 'OK' if count is not None and count > 0 else 'EMPTY'
+#             })
         
-        return pd.DataFrame(freshness_data)
-    finally:
-        db.close()
+#         return pd.DataFrame(freshness_data)
+#     finally:
+#         db.close()
 
 
 # Helper function to get all seasons
