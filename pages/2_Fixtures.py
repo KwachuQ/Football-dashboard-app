@@ -5,10 +5,10 @@ import sys
 import os
 from components.filters import date_range_filter
 
-# Ensure project root is importable
-# PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-# if PROJECT_ROOT not in sys.path:
-#     sys.path.append(PROJECT_ROOT)
+#Ensure project root is importable
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
 from services.queries import (
     get_upcoming_fixtures, 
