@@ -5,3 +5,4 @@ __pycache__/
 .env.*
 .vscode/
 Football-dashboard-app.code-workspace
+aws_logs/

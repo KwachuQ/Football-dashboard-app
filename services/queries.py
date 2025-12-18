@@ -861,7 +861,7 @@ def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: 
             result = conn.execute(text(sql), params)
             row = result.fetchone()
             
-            if row:
+            if row and row[0] is not None:
                 return int(row[0])
             return 0
     
