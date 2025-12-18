@@ -14,7 +14,7 @@ import logging
 #     sys.path.append(PROJECT_ROOT)
 
 # from services.db import get_db, test_connection , get_engine
-# from services.queries import get_data_freshness, get_all_seasons
+# from services.queries import # get_data_freshness, get_all_seasons
 # from services.cache import CacheManager, CacheMonitor
 
 logging.basicConfig(level=logging.INFO)
@@ -170,48 +170,48 @@ with col2:
     except Exception as e:
         st.warning("Cache monitoring unavailable")
 
-# Data Freshness
-st.header("Data Freshness")
+# # Data Freshness
+# st.header("Data Freshness")
 
-try:
-    from services.queries import get_data_freshness
-    freshness_df = get_data_freshness()
+# try:
+#     from services.queries import # get_data_freshness
+#     freshness_df = # get_data_freshness()
     
-    if not freshness_df.empty:
-        freshness_df['data_age'] = freshness_df.apply(
-            lambda row: calculate_data_age(row.get('last_updated')), 
-            axis=1
-        )
+#     if not freshness_df.empty:
+#         freshness_df['data_age'] = freshness_df.apply(
+#             lambda row: calculate_data_age(row.get('last_updated')), 
+#             axis=1
+#         )
         
-        def get_status(row):
-            if row['row_count'] == 0 or row['row_count'] is None:
-                return "🔴 Empty"
+#         def get_status(row):
+#             if row['row_count'] == 0 or row['row_count'] is None:
+#                 return "🔴 Empty"
             
-            last_updated = row.get('last_updated')
-            if last_updated is None or pd.isna(last_updated):
-                return "⚪ Unknown"
+#             last_updated = row.get('last_updated')
+#             if last_updated is None or pd.isna(last_updated):
+#                 return "⚪ Unknown"
             
-            age = datetime.now() - last_updated
+#             age = datetime.now() - last_updated
             
-            if age < timedelta(minutes=5):
-                return "🟢 Fresh"
-            elif age < timedelta(hours=1):
-                return "🟡 Recent"
-            elif age < timedelta(days=1):
-                return "🟠 Aging"
-            else:
-                return "🔴 Stale"
+#             if age < timedelta(minutes=5):
+#                 return "🟢 Fresh"
+#             elif age < timedelta(hours=1):
+#                 return "🟡 Recent"
+#             elif age < timedelta(days=1):
+#                 return "🟠 Aging"
+#             else:
+#                 return "🔴 Stale"
         
-        freshness_df['status'] = freshness_df.apply(get_status, axis=1)
+#         freshness_df['status'] = freshness_df.apply(get_status, axis=1)
         
-        st.dataframe(
-            freshness_df[['table_name', 'row_count', 'last_updated', 'data_age', 'status']],
-            width='stretch',
-            hide_index=True
-        )
-    else:
-        st.warning("No data freshness information available")
+#         st.dataframe(
+#             freshness_df[['table_name', 'row_count', 'last_updated', 'data_age', 'status']],
+#             width='stretch',
+#             hide_index=True
+#         )
+#     else:
+#         st.warning("No data freshness information available")
 
-except Exception as e:
-    logger.error(f"Failed to get data freshness: {e}")
-    st.error(f"Error loading data freshness: {e}")
+# except Exception as e:
+#     logger.error(f"Failed to get data freshness: {e}")
+#     st.error(f"Error loading data freshness: {e}")

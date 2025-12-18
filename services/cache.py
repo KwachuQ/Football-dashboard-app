@@ -114,7 +114,7 @@ class CacheLazyWarmer:
         # Move the import here (lazy import) to avoid circular dependency
         from services.queries import (
             get_all_seasons,
-            get_data_freshness,
+            # get_data_freshness,
             get_upcoming_fixtures,
         )
         
@@ -125,7 +125,7 @@ class CacheLazyWarmer:
             get_all_seasons()
             
             # Warm freshness data
-            get_data_freshness()
+            # get_data_freshness()
             
             # Warm upcoming fixtures
             if season_id:
@@ -137,6 +137,7 @@ class CacheLazyWarmer:
             
         except Exception as e:
             logger.error(f"Error during cache warm-up: {e}")
+
 # ============================================================================
 # Cache Monitoring
 # ============================================================================
@@ -294,7 +295,7 @@ class CacheWarmer:
         """
         from services.queries import (
             get_all_seasons,
-            get_data_freshness,
+            # # get_data_freshness,
             get_upcoming_fixtures,
         )
         
@@ -305,7 +306,7 @@ class CacheWarmer:
             get_all_seasons()
             
             # Warm freshness data
-            get_data_freshness()
+            # get_data_freshness()
             
             # Warm upcoming fixtures
             if season_id:
@@ -323,47 +324,47 @@ class CacheWarmer:
 # Freshness Tracking
 # ============================================================================
 
-class FreshnessTracker:
-    """Track data freshness and trigger cache invalidation."""
+# class FreshnessTracker:
+#     """Track data freshness and trigger cache invalidation."""
     
-    _freshness_key = "_data_freshness"
+#     _freshness_key = "_data_freshness"
     
-    def __init__(self):
-        """Initialize freshness tracker."""
-        if self._freshness_key not in st.session_state:
-            st.session_state[self._freshness_key] = {
-                'last_check': None,
-                'stale_tables': []
-            }
+#     def __init__(self):
+#         """Initialize freshness tracker."""
+#         if self._freshness_key not in st.session_state:
+#             st.session_state[self._freshness_key] = {
+#                 'last_check': None,
+#                 'stale_tables': []
+#             }
     
-    def check_freshness(self, max_age_minutes: int = 60):
-        """
-        Check data freshness and invalidate cache if stale.
+    # def check_freshness(self, max_age_minutes: int = 60):
+    #     """
+    #     Check data freshness and invalidate cache if stale.
         
-        Args:
-            max_age_minutes: Maximum acceptable data age in minutes
-        """
-        from services.queries import get_data_freshness
+    #     Args:
+    #         max_age_minutes: Maximum acceptable data age in minutes
+    #     """
+    #     from services.queries import # get_data_freshness
         
-        try:
-            freshness_df = get_data_freshness()
+    #     try:
+    #         freshness_df = # get_data_freshness()
             
-            if freshness_df.empty:
-                return
+    #         if freshness_df.empty:
+    #             return
             
-            # Check which tables are stale
-            stale = []
-            for _, row in freshness_df.iterrows():
-                if row['status'] in ['🔴 Stale', 'EMPTY']:
-                    stale.append(row['table_name'])
+    #         # Check which tables are stale
+    #         stale = []
+    #         for _, row in freshness_df.iterrows():
+    #             if row['status'] in ['🔴 Stale', 'EMPTY']:
+    #                 stale.append(row['table_name'])
             
-            # If stale tables changed, clear cache
-            if stale != st.session_state[self._freshness_key]['stale_tables']:
-                logger.warning(f"Stale tables detected: {stale}. Clearing cache.")
-                CacheManager.clear_query_cache()
-                st.session_state[self._freshness_key]['stale_tables'] = stale
+    #         # If stale tables changed, clear cache
+    #         if stale != st.session_state[self._freshness_key]['stale_tables']:
+    #             logger.warning(f"Stale tables detected: {stale}. Clearing cache.")
+    #             CacheManager.clear_query_cache()
+    #             st.session_state[self._freshness_key]['stale_tables'] = stale
             
-            st.session_state[self._freshness_key]['last_check'] = datetime.now()
+    #         st.session_state[self._freshness_key]['last_check'] = datetime.now()
             
-        except Exception as e:
-            logger.error(f"Error checking freshness: {e}")
+    #     except Exception as e:
+    #         logger.error(f"Error checking freshness: {e}")
