@@ -1,3 +1,4 @@
+import streamlit as st
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings
 from typing import Optional
@@ -35,7 +36,7 @@ class DatabaseSettings(BaseSettings):
             f"?sslmode=require"
         )
 
-
+@st.cache_resource
 def get_db_settings() -> DatabaseSettings:
     """Load database settings from Streamlit secrets or environment variables."""
     

@@ -100,7 +100,7 @@
 #         return False
 
 # AWS connection settings
-
+import streamlit as st
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
@@ -110,57 +110,57 @@ from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
 
-_engine = None
-_settings = None
-
-def get_db_settings():
-    """Get database settings (cached)."""
-    global _settings
-    if _settings is None:
-        from config.settings import get_db_settings as load_settings
-        _settings = load_settings()
-    return _settings
-
+@st.cache_resource
 def get_engine():
-    """Create SQLAlchemy engine once and reuse."""
-    global _engine
-    if _engine is not None:
-        return _engine
-
-    settings = get_db_settings()
+    """Get database settings (cached)."""
+    from config.settings import get_db_settings
     
+    settings = get_db_settings()
+
     try:
         database_url = settings.build_sqlalchemy_url()
         
-        _engine = create_engine(
+        engine = create_engine(
             database_url,
             poolclass=QueuePool,
             pool_size=settings.DB_POOL_SIZE,
             max_overflow=settings.DB_MAX_OVERFLOW,
             pool_recycle=settings.DB_POOL_RECYCLE,
-            pool_pre_ping=True,  # Critical for AWS connections
+            pool_pre_ping=True,
             echo=settings.SQLALCHEMY_ECHO,
             connect_args={
-                "connect_timeout": 10,  # Prevent hanging
+                "connect_timeout": 10,
                 "keepalives": 1,
                 "keepalives_idle": 30,
                 "keepalives_interval": 10,
                 "keepalives_count": 5,
             }
         )
-        logger.info("Database engine created successfully")
-        return _engine
+        logger.info("✅ Database engine created successfully (cached)")
+        return engine
     except Exception as e:
-        logger.error(f"Failed to create database engine: {e}")
+        logger.error(f"❌ Failed to create database engine: {e}")
         raise RuntimeError(f"Database connection failed: {e}")
+
 
 def get_session_maker():
     """Create session maker bound to the cached engine."""
     engine = get_engine()
     return sessionmaker(bind=engine, expire_on_commit=False)
 
+
 def get_db() -> Generator[Session, None, None]:
-    """Dependency function to get database session."""
+    """
+    Dependency function to get database session.
+    
+    Usage:
+        db = next(get_db())
+        try:
+            # Use db
+            result = db.execute(query)
+        finally:
+            db.close()
+    """
     SessionLocal = get_session_maker()
     db = SessionLocal()
     try:
@@ -172,13 +172,15 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
+
 def test_connection() -> bool:
-    """Test database connection."""
+    """Test database connection using cached engine."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        logger.info("✅ Database connection test successful")
         return True
     except Exception as e:
-        logger.error(f"Database connection test failed: {e}")
+        logger.error(f"❌ Database connection test failed: {e}")
         return False
