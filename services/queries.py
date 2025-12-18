@@ -193,9 +193,6 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
 
             # Get the form string from the database
             form_string = getattr(result, f'last_{suffix}_results', '')
-            
-            # Debug log to see what we're getting
-            logger.info(f"Team {team_id} form: {form_string} (type: {type(form_string)})")
 
             return {
                 'team_id': result.team_id,
