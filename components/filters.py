@@ -7,10 +7,19 @@ from typing import Optional, List, Dict, Any, Literal
 import yaml
 from pathlib import Path
 import logging
-from services.queries import get_team_stats
 
+#------------------------------------------------------------------------------------------------------------
+#---------------------------------------HELPER FUNCTIONS-----------------------------------------------------
+#------------------------------------------------------------------------------------------------------------
 
-
+def lazy_get_team_stats(stat_type: str, season_id: int, team_id: Optional[int] = None):
+    """Lazy load team stats to avoid circular imports."""
+    try:
+        from services.queries import get_team_stats
+        return get_team_stats(stat_type, season_id, team_id)
+    except Exception as e:
+        logger.error(f"Error loading team stats: {e}")
+        return pd.DataFrame() if team_id is None else {}
 # Team selector filter to get team name from a dataframe (get_team_names function in queries.py)
 
 def team_selector(
