@@ -7,24 +7,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import logging
 import matplotlib.pyplot as plt
 from mplsoccer import Radar
 import warnings
-
-
-# # Import existing components and services
-# from components.filters import team_selector, home_away_toggle, get_active_league_from_config
-# from services.queries import get_all_seasons, get_league_standings, get_team_form, get_all_team_stats, get_league_averages, get_team_stats
-# from services.transforms import (
-#     calculate_win_rate, 
-#     calculate_form_sequence,
-#     calculate_league_stats_and_percentiles,
-#     calculate_radar_scales,
-#     normalize_for_radar
-# )
-# from services.db import get_engine
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -65,7 +52,55 @@ st.markdown("""
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+def lazy_get_team_form(team_id: int, last_n_matches: int = 5) -> Optional[Dict[str, Any]]:
+    """Lazy load team form to avoid circular imports."""
+    try:
+        from services.queries import get_team_form
+        return get_team_form(team_id, last_n_matches)
+    except Exception as e:
+        logger.error(f"Error loading form data: {e}")
+        return None
 
+
+def lazy_get_team_stats(stat_type: str, season_id: int, team_id: Optional[int] = None) -> Any:
+    """
+    Lazy load team stats to avoid circular imports.
+    Returns DataFrame if team_id is None, Dict if team_id is provided.
+    """
+    try:
+        from services.queries import get_team_stats
+        return get_team_stats(stat_type, season_id=season_id, team_id=team_id)
+    except Exception as e:
+        logger.error(f"Error loading {stat_type} stats: {e}")
+        if team_id is None:
+            return pd.DataFrame()
+        else:
+            return {}
+
+
+def lazy_calculate_league_stats_and_percentiles(
+    all_teams_df: pd.DataFrame,
+    team_stats: Dict[str, Any],
+    league_avg: Optional[Dict[str, Any]] = None
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """
+    Lazy calculate percentiles to avoid circular imports.
+    
+    Args:
+        all_teams_df: DataFrame with all teams' statistics
+        team_stats: Dictionary of selected team's statistics
+        league_avg: Optional pre-calculated league averages
+    
+    Returns:
+        Tuple of (league_averages_dict, percentiles_dict)
+    """
+    try:
+        from services.transforms import calculate_league_stats_and_percentiles
+        return calculate_league_stats_and_percentiles(all_teams_df, team_stats, league_avg)
+    except Exception as e:
+        logger.error(f"Error calculating league stats and percentiles: {e}")
+        return {}, {}
+    
 def safe_get(data: Optional[Dict[str, Any]], key: str, default: Any = 0) -> Any:
     """Safely get value from dict, handling None and missing keys."""
     if data is None:
@@ -611,10 +646,10 @@ try:
     league_averages = get_league_averages(selected_season_id)
     
     # Get ALL teams' data for percentile calculations (4 calls total for all tabs)
-    all_teams_attack = get_team_stats('attack', season_id=selected_season_id, team_id=None)
-    all_teams_defense = get_team_stats('defense', season_id=selected_season_id, team_id=None)
-    all_teams_possession = get_team_stats('possession', season_id=selected_season_id, team_id=None)
-    all_teams_discipline = get_team_stats('discipline', season_id=selected_season_id, team_id=None)
+    all_teams_attack = lazy_get_team_stats('attack', season_id=selected_season_id, team_id=None)
+    all_teams_defense = lazy_get_team_stats('defense', season_id=selected_season_id, team_id=None)
+    all_teams_possession = lazy_get_team_stats('possession', season_id=selected_season_id, team_id=None)
+    all_teams_discipline = lazy_get_team_stats('discipline', season_id=selected_season_id, team_id=None)
 
 except Exception as e:
     logger.error(f"Error loading team stats: {e}")
@@ -692,7 +727,7 @@ with form_tab:
         help="Number of recent matches to analyze",
     )
     try:
-        form_data = get_team_form(selected_team_id, last_n_matches=form_window)
+        form_data = lazy_get_team_form(selected_team_id, last_n_matches=form_window)
 
         if form_data:
             # Use dynamic key 'last_results' instead of hardcoded "last_5_results"
@@ -807,7 +842,7 @@ with attack_tab:
     try:
         if isinstance(all_teams_attack, pd.DataFrame) and not all_teams_attack.empty and attack_stats:
             # Calculate percentiles using pre-loaded data
-            league_avg_attack, percentiles = calculate_league_stats_and_percentiles(
+            league_avg_attack, percentiles = lazy_calculate_league_stats_and_percentiles(
                 all_teams_attack, 
                 attack_stats,       
                 None     
@@ -909,7 +944,7 @@ with defense_tab:
     try:
         if isinstance(all_teams_defense, pd.DataFrame) and defense_stats:
             # Calculate percentiles using pre-loaded data
-            league_avg_defense, percentiles = calculate_league_stats_and_percentiles(
+            league_avg_defense, percentiles = lazy_calculate_league_stats_and_percentiles(
                 all_teams_defense, 
                 defense_stats,       
                 None     
@@ -1018,7 +1053,7 @@ with possession_tab:
     try:
         if isinstance(all_teams_possession, pd.DataFrame) and possession_stats:
             # Calculate percentiles using pre-loaded data
-            league_avg_possession, percentiles = calculate_league_stats_and_percentiles(
+            league_avg_possession, percentiles = lazy_calculate_league_stats_and_percentiles(
                 all_teams_possession,  
                 possession_stats,     
                 None        
@@ -1118,7 +1153,7 @@ with discipline_tab:
     try:
         if isinstance(all_teams_discipline, pd.DataFrame) and discipline_stats:
             # Calculate percentiles using pre-loaded data
-            league_avg_discipline, percentiles = calculate_league_stats_and_percentiles(
+            league_avg_discipline, percentiles = lazy_calculate_league_stats_and_percentiles(
                 all_teams_discipline, 
                 discipline_stats,       
                 None       
