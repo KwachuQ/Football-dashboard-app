@@ -107,7 +107,7 @@ from sqlalchemy.pool import QueuePool
 from typing import Generator
 import os
 from dotenv import load_dotenv
-from services.cache import cache_resource_singleton
+# from services.cache import cache_resource_singleton
 from urllib.parse import quote_plus
 
 # Load environment variables
@@ -138,26 +138,26 @@ POOL_RECYCLE = _int_env("DB_POOL_RECYCLE", 1800)
 DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSL_MODE}"
 
 
-@cache_resource_singleton()
+_engine = None
+
 def get_engine():
     """
-    Create and cache SQLAlchemy engine with connection pooling.
-    
-    This function is cached as a resource, meaning the engine is created
-    once and reused across all sessions.
-    
-    Returns:
-        SQLAlchemy Engine instance
+    Create SQLAlchemy engine once and reuse (avoid importing services.cache at module import).
     """
+    global _engine
+    if _engine is not None:
+        return _engine
+
     engine = create_engine(
         DATABASE_URL,
         poolclass=QueuePool,
         pool_size=POOL_SIZE,
         max_overflow=MAX_OVERFLOW,
         pool_recycle=POOL_RECYCLE,
-        pool_pre_ping=True,  # Verify connections before using
+        pool_pre_ping=True,
         echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true"
     )
+    _engine = engine
     return engine
 
 

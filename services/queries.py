@@ -4,8 +4,8 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import column, select, func, desc, and_, or_, text
 from sqlalchemy.orm import Session
 import pandas as pd
-from services.db import get_engine
-from services.cache import cache_query_result
+# from services.db import get_engine
+# from services.cache import cache_query_result
 import logging
 # from src.models.team_overview import TeamOverview
 # from src.models.team_form import TeamForm
@@ -19,9 +19,24 @@ import logging
 # from src.models.team_btts_analysis import TeamBttsAnalysis
 # from src.models.league_averages import LeagueAverages
 # from src.models.fact_match import FactMatch
-from services.db import get_db
+# from services.db import get_db
 
 logger = logging.getLogger(__name__)
+
+def _safe_int(val: Any, default: int = 0) -> int:
+    """Convert DB/ENV values safely to int, treating None/'None'/'' as default."""
+    if val is None:
+        return default
+    s = str(val).strip()
+    if s == "" or s.lower() == "none":
+        return default
+    try:
+        return int(s)
+    except Exception:
+        try:
+            return int(float(s))
+        except Exception:
+            return default
 
 def get_upcoming_fixtures(
     season_id: Optional[int] = None,
@@ -44,7 +59,8 @@ def get_upcoming_fixtures(
                                 tournament_name, season_name, round_number, status_type
     """
     from sqlalchemy import text
-    
+    from services.db import get_db
+
     db = next(get_db())
     try:
          # Default date range if not provided
@@ -89,12 +105,12 @@ def get_upcoming_fixtures(
         
         if season_id:
             sql += " AND season_id = :season_id"
-            params['season_id'] = season_id
+            params['season_id'] = _safe_int(season_id)
         
         if tournament_id:
             sql += " AND tournament_id = :tournament_id"
-            params['tournament_id'] = tournament_id
-        
+            params['tournament_id'] = _safe_int(tournament_id)
+
         # Use string formatting for LIMIT instead of parameterization
         sql += f" ORDER BY start_timestamp ASC LIMIT {limit}"
         
@@ -140,12 +156,12 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     Returns:
         Dictionary with form data for the selected window
     """
-    from sqlalchemy import select, and_, func
     from src.models.team_form import TeamForm
+    from services.db import get_db
     
     # Convert numpy types to Python int to avoid psycopg2 adapter errors
-    team_id = int(team_id)
-    last_n_matches = int(last_n_matches)
+    team_id = _safe_int(team_id)
+    last_n_matches = _safe_int(last_n_matches, default=5)
     
     # Map last_n_matches to column suffix (default to 5 if unsupported)
     supported_windows = {5: '5', 10: '10', 15: '15', 20: '20'}
@@ -160,7 +176,7 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
         
         query = select(TeamForm).where(
             and_(
-                TeamForm.team_id == team_id,
+                TeamForm.team_id == _safe_int(team_id),
                 TeamForm.season_id == subquery
             )
         )
@@ -203,6 +219,7 @@ def get_all_team_stats(
     from src.models.team_overview import TeamOverview
     from src.models.team_btts_analysis import TeamBttsAnalysis
     from src.models.team_season_summary import TeamSeasonSummary
+    from services.db import get_db
     """
     Get all team statistics categories in a single database call.
     
@@ -215,9 +232,13 @@ def get_all_team_stats(
         Each value is a dict of statistics for that category
     """
     db = next(get_db())
+    team_id = _safe_int(team_id)
+    if season_id is not None:
+        season_id = _safe_int(season_id)
+
     try:
         from sqlalchemy import inspect
-        
+
         model_map = {
             'attack': TeamAttack,
             'defense': TeamDefense,
@@ -268,6 +289,7 @@ def get_team_stats(
     season_id: Optional[int] = None,
     team_id: Optional[int] = None
 ) -> Dict[str, Any] | pd.DataFrame:
+    
     from src.models.team_attack import TeamAttack
     from src.models.team_defense import TeamDefense
     from src.models.team_possession import TeamPossession
@@ -275,6 +297,7 @@ def get_team_stats(
     from src.models.team_overview import TeamOverview
     from src.models.team_btts_analysis import TeamBttsAnalysis
     from src.models.team_season_summary import TeamSeasonSummary
+    from services.db import get_db
     """
     Get team statistics by category.
     
@@ -287,6 +310,11 @@ def get_team_stats(
         If team_id provided: Dictionary with statistics for that team
         If team_id is None: DataFrame with statistics for ALL teams in the season
     """
+    if team_id is not None:
+        team_id = _safe_int(team_id)
+    if season_id is not None:
+        season_id = _safe_int(season_id)
+
     db = next(get_db())
     try:
         model_map = {
@@ -376,6 +404,7 @@ def get_league_averages(
     season_id: int
 ) -> Dict[str, Any]:
     from src.models.league_averages import LeagueAverages
+    from services.db import get_db
     """
     Get league average statistics for a given season.
     
@@ -422,6 +451,7 @@ def get_head_to_head(
     limit: int = 10
 ) -> Dict[str, Any]:
     from src.models.head_to_head import HeadToHead
+    from services.db import get_db
 
     """Get head-to-head statistics between two teams.
     
@@ -488,12 +518,13 @@ def get_head_to_head(
     finally:
         db.close()
 
-def get_h2h_results(
-    team_id_1: int,
-    team_id_2: int,
-    limit: int = 5
-) -> pd.DataFrame:
+def get_h2h_results(team_id_1: int, team_id_2: int, limit: int = 5) -> pd.DataFrame:
+    team_id_1 = _safe_int(team_id_1)
+    team_id_2 = _safe_int(team_id_2)
+    limit = _safe_int(limit, default=5)
+
     from src.models.fact_match import FactMatch
+    from services.db import get_db
     """
     Get actual head-to-head match results between two teams from fact_match table.
     Finds all matches where these two teams played each other, regardless of home/away.
@@ -588,6 +619,8 @@ def get_h2h_results(
         db.close()
         
 def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
+    
+    match_ids = [ _safe_int(m) for m in match_ids ]
     """
     Get predictions for specific matches from upcoming_predictions table.
     
@@ -598,6 +631,7 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
         DataFrame with prediction details for requested matches
     """
     from src.models.upcoming_predictions import UpcomingPredictions
+    from services.db import get_db
 
     db = next(get_db())
     try:
@@ -635,6 +669,9 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
         db.close()
         
 def get_league_standings(season_id: int) -> pd.DataFrame:
+
+    season_id = _safe_int(season_id)
+
     """
     Get league standings (team overview sorted by points).
     
@@ -645,6 +682,8 @@ def get_league_standings(season_id: int) -> pd.DataFrame:
         DataFrame with team standings sorted by points descending
     """
     from src.models.team_overview import TeamOverview
+    from services.db import get_db
+    
 
     db = next(get_db())
     try:
@@ -698,6 +737,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
         Dictionary with BTTS statistics (overall, home, away)
     """
     from src.models.team_btts_analysis import TeamBttsAnalysis
+    from services.db import get_db
 
     db = next(get_db())
     try:
@@ -787,7 +827,8 @@ def get_data_freshness() -> pd.DataFrame:
     # Note: Your tables don't have updated_at columns based on the schema.
     # This function returns a placeholder. You'll need to add updated_at columns
     # to your DBT models or track freshness via a metadata table.
-    
+    from services.db import get_db
+
     tables = [
         'mart_team_overview',
         'mart_team_form',
@@ -833,6 +874,7 @@ def get_all_seasons() -> pd.DataFrame:
         DataFrame with season_id, season_name, season_year
     """
     from src.models.team_overview import TeamOverview
+    from services.db import get_db
 
     db = next(get_db())
     try:
@@ -847,6 +889,8 @@ def get_all_seasons() -> pd.DataFrame:
     finally:
         db.close()
 
+from services.cache import cache_query_result
+
 @cache_query_result(ttl=300)  # Cache for 5 minutes
 def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: Optional[int] = None) -> int:
     """
@@ -859,6 +903,9 @@ def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: 
     Returns:
         Count of upcoming fixtures
     """
+    from services.db import get_engine
+    
+
     try:
         engine = get_engine()
         from sqlalchemy import text
@@ -876,11 +923,10 @@ def get_upcoming_fixtures_count(tournament_id: Optional[int] = None, season_id: 
         
         if tournament_id is not None:
             sql += " AND tournament_id = :tournament_id"
-            params['tournament_id'] = tournament_id
-        
+            params['tournament_id'] = _safe_int(tournament_id)       
         if season_id is not None:
             sql += " AND season_id = :season_id"
-            params['season_id'] = season_id
+            params['season_id'] = _safe_int(season_id)
         
         with engine.connect() as conn:
             result = conn.execute(text(sql), params)
@@ -916,6 +962,8 @@ def get_upcoming_fixtures_list(
         DataFrame with upcoming fixtures
     """
     try:
+        from services.db import get_engine
+
         engine = get_engine()
         from sqlalchemy import text
         
@@ -963,7 +1011,8 @@ def get_team_names() -> pd.DataFrame:
         DataFrame with team_id and team_name
     """
     from src.models.team_overview import TeamOverview
-    
+    from services.db import get_db
+
     db = next(get_db())
     try:
         query = select(
