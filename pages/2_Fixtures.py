@@ -1,3 +1,4 @@
+from asyncio.log import logger
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
@@ -152,15 +153,34 @@ try:
                 form_data = get_team_form(team_id=team_id, last_n_matches=5)
                 
                 if not form_data:
+                    logger.warning(f"No form data returned for team {team_id}")
                     return "N/A"
                 
                 # Extract last_5_results from the returned dict
                 last_5 = form_data.get('last_5_results')
+
+                # Debug logging
+                logger.info(f"Team {team_id} - Form data: {form_data}")
+                logger.info(f"Team {team_id} - last_5: {last_5} (type: {type(last_5)})")
+
+                # Handle different cases
+                if last_5 is None:
+                    logger.warning(f"Team {team_id} - last_5_results is None")
+                    return "N/A"
                 
-                if last_5 and isinstance(last_5, str) and len(last_5) > 0:
-                    return last_5[:5]  # First 5 characters
+                if not isinstance(last_5, str):
+                    logger.warning(f"Team {team_id} - last_5_results is not a string: {type(last_5)}")
+                    last_5 = str(last_5) if last_5 else ''
                 
-                return "N/A"
+                # Clean the string
+                last_5 = last_5.strip()
+        
+                if len(last_5) == 0:
+                    logger.warning(f"Team {team_id} - last_5_results is empty")
+                    return "N/A"
+        
+                # Return first 5 characters (WWDLL format)
+                return last_5[:5]
                 
             except Exception as e:
                 # Log the error but don't break the page
