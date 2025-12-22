@@ -17,10 +17,7 @@ class DatabaseSettings(BaseSettings):
     POSTGRES_HOST: str = Field(default="localhost")
     POSTGRES_PORT: int = Field(default=5432, ge=1, le=65535)
     DATABASE_URL: Optional[str] = Field(default=None)
-
-    # Optional override for SSL mode. If not set, SSL will be required for non-local hosts.
     DB_SSLMODE: Optional[str] = Field(default=None)
-
     DB_POOL_SIZE: int = Field(default=3, ge=1, le=50)
     DB_MAX_OVERFLOW: int = Field(default=5, ge=0, le=100)
     DB_POOL_RECYCLE: int = Field(default=1800, ge=300)
@@ -121,7 +118,7 @@ def get_db_settings() -> DatabaseSettings:
                 "Please configure database credentials in Streamlit secrets or .env file."
             )
         
-        # Create settings from environment (now guaranteed non-None)
+        # Create settings from environment variables
         return DatabaseSettings(
             POSTGRES_USER=postgres_user,
             POSTGRES_PASSWORD=SecretStr(postgres_password),

@@ -136,10 +136,10 @@ def get_engine():
                 "keepalives_count": 5,
             }
         )
-        logger.info("✅ Database engine created successfully (cached)")
+        logger.info("Database engine created successfully (cached)")
         return engine
     except Exception as e:
-        logger.error(f"❌ Failed to create database engine: {e}")
+        logger.error(f"Failed to create database engine: {e}")
         raise RuntimeError(f"Database connection failed: {e}")
 
 
@@ -179,8 +179,8 @@ def test_connection() -> bool:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        logger.info("✅ Database connection test successful")
+        logger.info("Database connection test successful")
         return True
     except Exception as e:
-        logger.error(f"❌ Database connection test failed: {e}")
+        logger.error(f"Database connection test failed: {e}")
         return False

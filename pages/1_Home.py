@@ -5,35 +5,28 @@ import yaml
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
+import time
 from typing import Dict, Any, Optional
 import logging
-from time import perf_counter
-from contextlib import contextmanager
 
-# # Ensure project root is importable
-# PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-# if PROJECT_ROOT not in sys.path:
-#     sys.path.append(PROJECT_ROOT)
-
-# from services.db import get_db, test_connection , get_engine
-# from services.queries import # get_data_freshness, get_all_seasons
-# from services.cache import CacheManager, CacheMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TIMINGS: dict[str, list[float]] = {}
+# Lazy imports to avoid circular dependencies
+def get_time_page_load():
+    from services.cache import time_page_load
+    return time_page_load
 
-@contextmanager
-def timed_log(name: str):
-    start = perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = perf_counter() - start
-        # record timing
-        TIMINGS.setdefault(name, []).append(elapsed)
-        logger.info(f"{name} took {elapsed:.2f} seconds")
+def get_show_timings_sidebar():
+    from services.cache import show_timings_sidebar
+    return show_timings_sidebar
+
+def show_timings_inline():
+    from services.cache import show_timings_inline
+    return show_timings_inline
+
+time_page_load = get_time_page_load()
 
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
@@ -63,21 +56,22 @@ def load_league_config() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error loading league config: {e}")
         return {}
-
+    
+@st.cache_data(ttl=3600)
 def get_active_league(config: Dict[str, Any]) -> Dict[str, Any]:
     active = config.get('active_league', {})
     return {
         'country': active.get('country', 'Poland'),
         'league_id': active.get('league_id', 202),
     }
-
+@st.cache_data(ttl=3600)
 def get_active_season(config: Dict[str, Any]) -> Dict[str, Any]:
     active = config.get('active_season', {})
     return {
         'name': active.get('name', 'Ekstraklasa 25/26'),
         'season_id': active.get('season_id', 76477),
     }
-
+@st.cache_data(ttl=3600)
 def calculate_data_age(last_update: Optional[datetime]) -> str:
     if last_update is None:
         return "Never"
@@ -97,116 +91,109 @@ def calculate_data_age(last_update: Optional[datetime]) -> str:
         days = delta.days
         return f"{days} day{'s' if days != 1 else ''} ago"
 
-def log_timing_summary() -> None:
-    """Log per-task totals and overall total to the configured logger."""
-    if not TIMINGS:
-        logger.info("Timing summary: no timed sections recorded.")
-        return
-
-    total_all = sum(sum(times) for times in TIMINGS.values())
-    logger.info("---- Timing summary ----")
-    for name, times in TIMINGS.items():
-        s = sum(times)
-        cnt = len(times)
-        avg = s / cnt if cnt else 0.0
-        logger.info(f"{name}: total={s:.3f}s over {cnt} call(s) (avg={avg:.3f}s)")
-    logger.info(f"TOTAL PAGE LOAD TIME: {total_all:.3f}s")
-    logger.info("------------------------")
-
 # Main page content
-st.title("⚽ Football Analytics Dashboard")
-st.markdown("Real-time football statistics, predictions, and team analysis")
+@time_page_load
+def home():
 
-with timed_log("load_league_config"):
+    page_start = time.time()
+
+    st.title("Football Analytics Dashboard")
+    st.markdown("Real-time football statistics, predictions, and team analysis")
+
     config = load_league_config()
 
-if not config:
-    st.error("Failed to load configuration. Please check league_config.yaml")
-    st.stop()
+    if not config:
+        st.error("Failed to load configuration. Please check league_config.yaml")
+        st.stop()
 
-active_league = get_active_league(config)
-active_season = get_active_season(config)
+    active_league = get_active_league(config)
+    active_season = get_active_season(config)
 
-# Store in session state
-if 'active_season_id' not in st.session_state:
-    st.session_state.active_season_id = active_season.get('season_id')
+    # Store in session state
+    if 'active_season_id' not in st.session_state:
+        st.session_state.active_season_id = active_season.get('season_id')
 
-# Display active info
-col1, col2 = st.columns(2)
-with col1:
-    st.info(
-        f"**Active League:** Ekstraklasa\n\n"
-        f"**Country:** {active_league['country']}\n\n"
-        f"**League ID:** {active_league['league_id']}"
-    )
-with col2:
-    st.success(
-        f"**Active Season:** {active_season['name']}\n\n"
-        f"**Season ID:** {active_season['season_id']}"
-    )
+    # Display active info
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(
+            f"**Active League:** Ekstraklasa\n\n"
+            f"**Country:** {active_league['country']}\n\n"
+            f"**League ID:** {active_league['league_id']}"
+        )
+    with col2:
+        st.success(
+            f"**Active Season:** {active_season['name']}\n\n"
+            f"**Season ID:** {active_season['season_id']}"
+        )
 
-st.markdown("---")
+    st.markdown("---")
 
-# Quick Stats
-st.header("Quick Statistics")
+    # Quick Stats
+    st.header("Quick Statistics")
 
-col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4 = st.columns(4)
 
-season_id = active_season.get('season_id')
+    season_id = active_season.get('season_id')
 
-with col1:
-    try:
-        from services.queries import get_all_seasons
-        with timed_log("get_all_seasons"):
+    with col1:
+        try:
+            from services.queries import get_all_seasons
             seasons_df = get_all_seasons()
-        total_seasons = len(seasons_df) if not seasons_df.empty else 0
-        st.metric("Total Seasons", total_seasons)
-    except Exception as e:
-        st.metric("Total Seasons", "Error")
+            total_seasons = len(seasons_df) if not seasons_df.empty else 0
+            st.metric("Total Seasons", total_seasons)
+        except Exception as e:
+            st.metric("Total Seasons", "Error")
 
-with col2:
-    st.metric("Active League", "Ekstraklasa")
+    with col2:
+        st.metric("Active League", "Ekstraklasa")
 
-with col3:
-    try:
-        from services.queries import get_upcoming_fixtures_count
-        with timed_log("get_upcoming_fixtures_count"):
+    with col3:
+        try:
+            from services.queries import get_upcoming_fixtures_count
             fixtures_count = get_upcoming_fixtures_count(season_id=season_id)
-        st.metric("Upcoming Fixtures", fixtures_count)
-    except Exception as e:
-        st.metric("Upcoming Fixtures", "Error")
+            st.metric("Upcoming Fixtures", fixtures_count)
+        except Exception as e:
+            st.metric("Upcoming Fixtures", "Error")
 
-st.markdown("---")
-st.markdown("---")
+    st.markdown("---")
+    st.markdown("---")
 
-# Quick system status
-col1, col2 = st.columns(2)
+    # Quick system status
+    col1, col2 = st.columns(2)
 
-with col1:
-    st.subheader("Database Status")
-    try:
-        from services.db import test_connection
-        with timed_log("test_connection"):
-            ok = test_connection()
-        if ok:
-            st.success("🟢 Connected")
-        else:
-            st.error("🔴 Disconnected")
-    except Exception as e:
-        st.error(f"🔴 Error: {e}")
+    with col1:
+        st.subheader("Database Status")
+        try:
+            from services.db import test_connection
+            if test_connection():
+                st.success("🟢 Connected")
+            else:
+                st.error("🔴 Disconnected")
+        except Exception as e:
+            st.error(f"🔴 Error: {e}")
 
-with col2:
-    st.subheader("Cache Status")
-    try:
-        from services.cache import CacheMonitor
-        monitor = CacheMonitor()
-        stats = monitor.get_stats()
-        hit_rate = stats.get('hit_rate', 0.0)
-        st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
-    except Exception as e:
-        st.warning("Cache monitoring unavailable")
+    with col2:
+        st.subheader("Cache Status")
+        try:
+            from services.cache import CacheMonitor
+            monitor = CacheMonitor()
+            stats = monitor.get_stats()
+            hit_rate = stats.get('hit_rate', 0.0)
+            st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
+        except Exception as e:
+            st.warning("Cache monitoring unavailable")
+    
+    current_time = time.time() - page_start
+    if 'timings' not in st.session_state:
+        st.session_state.timings = {}
+    st.session_state.timings['Home'] = f"{current_time:.2f}s"
 
-log_timing_summary()
+    show_timings = show_timings_inline()
+    show_timings()  
+
+if __name__ == "__main__":
+    home()
 
 # # Data Freshness
 # st.header("Data Freshness")

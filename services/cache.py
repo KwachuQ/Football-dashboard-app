@@ -9,9 +9,49 @@ from datetime import datetime
 import logging
 import hashlib
 import json
+import time
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# Loading time logging
+# ============================================================================
+
+def time_page_load(func: Callable) -> Callable:
+    """Decorator measures page load time and saves it to session_state.timings"""
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> Any:
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        load_time = time.time() - start_time
+        
+        if 'timings' not in st.session_state:
+            st.session_state.timings = {}
+        
+        page_name = func.__name__.replace('_', ' ').title()
+        st.session_state.timings[page_name] = f"{load_time:.2f}s"
+        
+        logger.info(f"Page '{page_name}' loaded in {load_time:.2f}s")
+        
+        return result
+    return wrapper
+
+def show_timings_sidebar():
+    """Displays page load times in the sidebar"""
+    if 'timings' in st.session_state and st.session_state.timings:
+        st.sidebar.markdown("### Page Load Times")
+        for page, duration in st.session_state.timings.items():
+            st.sidebar.markdown(f"**{page}**: {duration}")
+        st.sidebar.markdown("---")
+
+def show_timings_inline():
+    """Inline timings display"""
+    if 'timings' in st.session_state and st.session_state.timings:
+        st.markdown("---")
+        st.markdown("#### Page Load Time")
+        for page, duration in st.session_state.timings.items():
+            st.markdown(f"**{page}**: {duration}")
+        st.markdown("---")
 
 # ============================================================================
 # Streamlit Cache Decorators
