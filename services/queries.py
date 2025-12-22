@@ -5,6 +5,7 @@ from sqlalchemy import column, select, func, desc, and_, or_, text
 from sqlalchemy.orm import Session
 import pandas as pd
 import logging
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
         except Exception:
             return default
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_upcoming_fixtures(
     season_id: Optional[int] = None,
     tournament_id: Optional[int] = None,
@@ -136,6 +138,7 @@ def get_upcoming_fixtures(
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     """
     Get team form statistics for the specified number of recent matches.
@@ -216,6 +219,7 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_all_team_stats(
     team_id: int,
     season_id: Optional[int] = None
@@ -292,6 +296,7 @@ def get_all_team_stats(
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_team_stats(
     stat_type: str,
     season_id: Optional[int] = None,
@@ -408,6 +413,7 @@ def get_team_stats(
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_league_averages(
     season_id: int
 ) -> Dict[str, Any]:
@@ -453,6 +459,7 @@ def get_league_averages(
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_head_to_head(
     team1_id: int,
     team2_id: int,
@@ -526,6 +533,7 @@ def get_head_to_head(
     finally:
         db.close()
 
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_h2h_results(team_id_1: int, team_id_2: int, limit: int = 5) -> pd.DataFrame:
     team_id_1 = _safe_int(team_id_1)
     team_id_2 = _safe_int(team_id_2)
@@ -625,7 +633,8 @@ def get_h2h_results(team_id_1: int, team_id_2: int, limit: int = 5) -> pd.DataFr
     
     finally:
         db.close()
-        
+
+@st.cache_data(ttl=1200, show_spinner=False)    
 def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
     
     match_ids = [ _safe_int(m) for m in match_ids ]
@@ -675,7 +684,8 @@ def get_match_predictions(match_ids: List[int]) -> pd.DataFrame:
         return pd.DataFrame(data)
     finally:
         db.close()
-        
+
+@st.cache_data(ttl=1200, show_spinner=False)        
 def get_league_standings(season_id: int) -> pd.DataFrame:
 
     season_id = _safe_int(season_id)
@@ -732,7 +742,7 @@ def get_league_standings(season_id: int) -> pd.DataFrame:
     finally:
         db.close()
 
-
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Get Both Teams To Score (BTTS) analysis for a team.
@@ -874,7 +884,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
 
 
 # Helper function to get all seasons
-
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_all_seasons() -> pd.DataFrame:
     """
     Get list of all available seasons.
@@ -1002,7 +1012,8 @@ def get_upcoming_fixtures_list(
     except Exception as e:
         logger.error(f"Error getting upcoming fixtures: {e}")
         return pd.DataFrame()
-    
+
+@st.cache_data(ttl=1200, show_spinner=False)    
 def get_team_names() -> pd.DataFrame:
     """
     Get list of all team names.
