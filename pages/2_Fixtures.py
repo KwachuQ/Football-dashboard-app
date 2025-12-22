@@ -6,6 +6,9 @@ import sys
 import os
 import time
 
+
+module_start = time.time()
+
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
     <style>
@@ -21,7 +24,10 @@ st.set_page_config(
     page_icon="📅",
     layout="wide"
 )
+config_time = time.time() - module_start
+st.sidebar.text(f"Config: {config_time:.2f}s")
 
+lazy_start = time.time()
 # Lazy imports to avoid circular dependencies
 def get_time_page_load():
     from services.cache import time_page_load
@@ -33,6 +39,8 @@ def show_timings_inline():
 
 time_page_load = get_time_page_load()
 
+lazy_time = time.time() - lazy_start
+st.sidebar.text(f"Lazy imports: {lazy_time:.2f}s")
 # ============================================================================
 # CACHED DATA PREPARATION FUNCTIONS (NOT Plotly objects!)
 # ============================================================================
@@ -283,20 +291,26 @@ def render_match_details(match, idx):
 def fixtures():
     page_start = time.time()
     
-    # Header
+    header_start = time.time()
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("Upcoming Fixtures")
+    header_time = time.time() - header_start
+    st.sidebar.text(f"Header: {header_time:.2f}s")
     
-    # Sidebar filters
+    sidebar_start = time.time()
     with st.sidebar:
+        filter_import_start = time.time()
         from components.filters import date_range_filter
+        filter_import_time = time.time() - filter_import_start
+        st.text(f"Filter import: {filter_import_time:.2f}s")
         
         st.header("Filters")
         
         today = date.today()
         default_end = today + timedelta(days=45)
         
+        filter_render_start = time.time()
         start_date, end_date = date_range_filter(
             key="fixtures_date_range",
             min_date=today,
@@ -304,6 +318,8 @@ def fixtures():
             default_start=today,
             default_end=default_end,
         )
+        filter_render_time = time.time() - filter_render_start
+        st.text(f"Filter render: {filter_render_time:.2f}s")
         
         st.markdown("---")
         max_fixtures = st.number_input(
@@ -313,6 +329,9 @@ def fixtures():
             value=50,
             step=10
         )
+    
+    sidebar_time = time.time() - sidebar_start
+    st.sidebar.text(f"TOTAL Sidebar: {sidebar_time:.2f}s")
     
     # Date range display
     if start_date and end_date:
@@ -419,6 +438,7 @@ def fixtures():
     # ========================================================================
     # TIMING DISPLAY
     # ========================================================================
+    timing_start = time.time()
     current_time = time.time() - page_start
     if 'timings' not in st.session_state:
         st.session_state.timings = {}
@@ -426,6 +446,8 @@ def fixtures():
     
     show_timings = show_timings_inline()
     show_timings()
+    timing_time = time.time() - timing_start
+    st.sidebar.text(f"Timing display: {timing_time:.2f}s")
 
     try:
         step1_start = time.time()
@@ -501,4 +523,7 @@ def fixtures():
         st.exception(e)
 
 if __name__ == "__main__":
+    main_start = time.time()
     fixtures()
+    main_time = time.time() - main_start
+    st.sidebar.text(f"MAIN execution: {main_time:.2f}s")
