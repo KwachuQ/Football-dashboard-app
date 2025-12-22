@@ -6,9 +6,6 @@ import sys
 import os
 import time
 
-
-module_start = time.time()
-
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
     <style>
@@ -24,10 +21,7 @@ st.set_page_config(
     page_icon="📅",
     layout="wide"
 )
-config_time = time.time() - module_start
-st.sidebar.text(f"Config: {config_time:.2f}s")
 
-lazy_start = time.time()
 # Lazy imports to avoid circular dependencies
 def get_time_page_load():
     from services.cache import time_page_load
@@ -39,8 +33,6 @@ def show_timings_inline():
 
 time_page_load = get_time_page_load()
 
-lazy_time = time.time() - lazy_start
-st.sidebar.text(f"Lazy imports: {lazy_time:.2f}s")
 # ============================================================================
 # CACHED DATA PREPARATION FUNCTIONS (NOT Plotly objects!)
 # ============================================================================
@@ -282,26 +274,20 @@ def render_match_details(match, idx):
 def fixtures():
     page_start = time.time()
     
-    header_start = time.time()
+    # Header
     col1, col2 = st.columns([3, 1])
     with col1:
         st.title("Upcoming Fixtures")
-    header_time = time.time() - header_start
-    st.sidebar.text(f"Header: {header_time:.2f}s")
     
-    sidebar_start = time.time()
+    # Sidebar filters
     with st.sidebar:
-        filter_import_start = time.time()
         from components.filters import date_range_filter
-        filter_import_time = time.time() - filter_import_start
-        st.text(f"Filter import: {filter_import_time:.2f}s")
         
         st.header("Filters")
         
         today = date.today()
         default_end = today + timedelta(days=45)
         
-        filter_render_start = time.time()
         start_date, end_date = date_range_filter(
             key="fixtures_date_range",
             min_date=today,
@@ -309,8 +295,6 @@ def fixtures():
             default_start=today,
             default_end=default_end,
         )
-        filter_render_time = time.time() - filter_render_start
-        st.text(f"Filter render: {filter_render_time:.2f}s")
         
         st.markdown("---")
         max_fixtures = st.number_input(
@@ -320,9 +304,6 @@ def fixtures():
             value=50,
             step=10
         )
-    
-    sidebar_time = time.time() - sidebar_start
-    st.sidebar.text(f"TOTAL Sidebar: {sidebar_time:.2f}s")
     
     # Date range display
     if start_date and end_date:
@@ -349,98 +330,32 @@ def fixtures():
         
         st.success(f"Found {len(fixtures_df)} fixtures")
         
-        # ========================================================================
-        # DEBUG: KAŻDA LINIA Z TIMINGIEM
-        # ========================================================================
-        st.sidebar.markdown("### CACHE TEST")
-
-        # Test 1: Wywołaj get_team_form 2x dla tego samego team_id
-        test_start = time.time()
-        from services.queries import get_team_form
-        test_team_id = int(fixtures_df.iloc[0]['home_team_id'])
-
-        call1_start = time.time()
-        result1 = get_team_form(test_team_id, 5)
-        call1_time = time.time() - call1_start
-
-        call2_start = time.time()
-        result2 = get_team_form(test_team_id, 5)  # Should be CACHED (0ms)
-        call2_time = time.time() - call2_start
-
-        st.sidebar.text(f"Cache test (team_id={test_team_id}):")
-        st.sidebar.text(f"  1st call: {call1_time*1000:.0f}ms")
-        st.sidebar.text(f"  2nd call: {call2_time*1000:.0f}ms")
-
-        if call2_time < 0.01:  # <10ms = cached
-            st.sidebar.success("CACHE WORKS!")
-        else:
-            st.sidebar.error(f"CACHE BROKEN! 2nd call = {call2_time*1000:.0f}ms")
-        debug_1 = time.time()
+        # STEP 2: Prepare unique team IDs for BATCH fetching
         unique_team_ids = list(set(
             list(fixtures_df['home_team_id'].astype(int)) + 
             list(fixtures_df['away_team_id'].astype(int))
         ))
-        st.sidebar.text(f"DEBUG 1 (unique IDs): {time.time() - debug_1:.2f}s")
-        st.sidebar.text(f"  -> {len(unique_team_ids)} unique teams")
         
-        debug_2 = time.time()
+        # STEP 3: BATCH FETCH team forms (CACHED - single call for all teams!)
         form_cache = prepare_bulk_team_forms(unique_team_ids, last_n=5)
-        debug_2_time = time.time() - debug_2
-        st.sidebar.text(f"DEBUG 2 (forms): {debug_2_time:.2f}s")
-        st.sidebar.text(f"  -> {len(unique_team_ids)} teams × get_team_form()")
         
-        # DEEP DEBUG dla prepare_bulk_team_forms
-        if debug_2_time > 1.0:
-            st.sidebar.warning(f"SLOW: prepare_bulk_team_forms took {debug_2_time:.2f}s")
-            st.sidebar.text(f"  -> This means {debug_2_time/len(unique_team_ids)*1000:.0f}ms per team")
-        
-        debug_3 = time.time()
+        # STEP 4: BATCH FETCH H2H records (CACHED)
         fixture_pairs = list(zip(
             fixtures_df['home_team_id'].astype(int),
             fixtures_df['away_team_id'].astype(int)
         ))
-        st.sidebar.text(f"DEBUG 3 (pairs): {time.time() - debug_3:.2f}s")
-        st.sidebar.text(f"  -> {len(fixture_pairs)} fixture pairs")
-        
-        debug_4 = time.time()
         h2h_cache = prepare_bulk_h2h_records(fixture_pairs)
-        debug_4_time = time.time() - debug_4
-        st.sidebar.text(f"DEBUG 4 (H2H): {debug_4_time:.2f}s")
-        st.sidebar.text(f"  -> {len(fixture_pairs)} pairs × get_head_to_head()")
         
-        # DEEP DEBUG dla prepare_bulk_h2h_records
-        if debug_4_time > 1.0:
-            st.sidebar.warning(f"SLOW: prepare_bulk_h2h_records took {debug_4_time:.2f}s")
-            st.sidebar.text(f"  -> This means {debug_4_time/len(fixture_pairs)*1000:.0f}ms per H2H")
-        
-        debug_5 = time.time()
+        # STEP 5: Enrich fixtures_df with cached data (FAST - no DB calls!)
         fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
-        st.sidebar.text(f"DEBUG 5a (home_form): {time.time() - debug_5:.2f}s")
-        
-        debug_5b = time.time()
         fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
-        st.sidebar.text(f"DEBUG 5b (away_form): {time.time() - debug_5b:.2f}s")
-        
-        debug_5c = time.time()
         fixtures_df['home_form_html'] = fixtures_df['home_form'].apply(format_form_html)
-        st.sidebar.text(f"DEBUG 5c (home_html): {time.time() - debug_5c:.2f}s")
-        
-        debug_5d = time.time()
         fixtures_df['away_form_html'] = fixtures_df['away_form'].apply(format_form_html)
-        st.sidebar.text(f"DEBUG 5d (away_html): {time.time() - debug_5d:.2f}s")
-        
-        debug_5e = time.time()
         fixtures_df['h2h'] = fixtures_df.apply(
             lambda row: h2h_cache.get((int(row['home_team_id']), int(row['away_team_id'])), "No H2H"),
             axis=1
         )
-        st.sidebar.text(f"DEBUG 5e (h2h map): {time.time() - debug_5e:.2f}s")
-        
-        debug_5f = time.time()
         fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
-        st.sidebar.text(f"DEBUG 5f (prediction): {time.time() - debug_5f:.2f}s")
-        
-        st.sidebar.text(f"DEBUG 5 TOTAL (enrich): {time.time() - debug_5:.2f}s")
         
     except Exception as e:
         st.error(f"Error loading fixtures: {e}")
@@ -493,9 +408,8 @@ def fixtures():
                 st.rerun()
     
     # ========================================================================
-    # TIMING DISPLAY
+    # TIMING DISPLAY (only on page, not sidebar)
     # ========================================================================
-    timing_start = time.time()
     current_time = time.time() - page_start
     if 'timings' not in st.session_state:
         st.session_state.timings = {}
@@ -503,84 +417,6 @@ def fixtures():
     
     show_timings = show_timings_inline()
     show_timings()
-    timing_time = time.time() - timing_start
-    st.sidebar.text(f"Timing display: {timing_time:.2f}s")
-
-    try:
-        step1_start = time.time()
-        fixtures_df = prepare_fixtures_data(start_date, end_date, max_fixtures)
-        step1_time = time.time() - step1_start
-        st.sidebar.text(f"Step 1 (fixtures): {step1_time:.2f}s")
-        
-        step2_start = time.time()
-        unique_team_ids = list(set(
-            list(fixtures_df['home_team_id'].astype(int)) + 
-            list(fixtures_df['away_team_id'].astype(int))
-        ))
-        step2_time = time.time() - step2_start
-        st.sidebar.text(f"Step 2 (team IDs): {step2_time:.2f}s")
-        
-        step3_start = time.time()
-        form_cache = prepare_bulk_team_forms(unique_team_ids, last_n=5)
-        step3_time = time.time() - step3_start
-        st.sidebar.text(f"Step 3 (forms): {step3_time:.2f}s")
-        
-        step4_start = time.time()
-        fixture_pairs = list(zip(
-            fixtures_df['home_team_id'].astype(int),
-            fixtures_df['away_team_id'].astype(int)
-        ))
-        h2h_cache = prepare_bulk_h2h_records(fixture_pairs)
-        step4_time = time.time() - step4_start
-        st.sidebar.text(f"Step 4 (H2H): {step4_time:.2f}s")
-        
-        step5_start = time.time()
-        # Data enrichment
-        fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
-        fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
-        fixtures_df['home_form_html'] = fixtures_df['home_form'].apply(format_form_html)
-        fixtures_df['away_form_html'] = fixtures_df['away_form'].apply(format_form_html)
-        fixtures_df['h2h'] = fixtures_df.apply(
-            lambda row: h2h_cache.get((int(row['home_team_id']), int(row['away_team_id'])), "No H2H"),
-            axis=1
-        )
-        fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
-        step5_time = time.time() - step5_start
-        st.sidebar.text(f"Step 5 (enrich): {step5_time:.2f}s")
-        
-        step6_start = time.time()
-        render_fixtures_table(fixtures_df)
-        step6_time = time.time() - step6_start
-        st.sidebar.text(f"Step 6 (table): {step6_time:.2f}s")
-        
-        step7_start = time.time()
-        # Lazy loading section
-        if 'show_all_fixtures' not in st.session_state:
-            st.session_state.show_all_fixtures = False
-        
-        initial_limit = 10
-        total_fixtures = len(fixtures_df)
-        
-        if total_fixtures <= initial_limit:
-            for idx, match in fixtures_df.iterrows():
-                render_match_details(match, idx)
-        else:
-            if not st.session_state.show_all_fixtures:
-                for idx, match in fixtures_df.head(initial_limit).iterrows():
-                    render_match_details(match, idx)
-            else:
-                for idx, match in fixtures_df.iterrows():
-                    render_match_details(match, idx)
-        
-        step7_time = time.time() - step7_start
-        st.sidebar.text(f"Step 7 (render details): {step7_time:.2f}s")
-        
-    except Exception as e:
-        st.error(f"Error: {e}")
-        st.exception(e)
 
 if __name__ == "__main__":
-    main_start = time.time()
     fixtures()
-    main_time = time.time() - main_start
-    st.sidebar.text(f"MAIN execution: {main_time:.2f}s")
