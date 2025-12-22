@@ -427,5 +427,78 @@ def fixtures():
     show_timings = show_timings_inline()
     show_timings()
 
+    try:
+        step1_start = time.time()
+        fixtures_df = prepare_fixtures_data(start_date, end_date, max_fixtures)
+        step1_time = time.time() - step1_start
+        st.sidebar.text(f"Step 1 (fixtures): {step1_time:.2f}s")
+        
+        step2_start = time.time()
+        unique_team_ids = list(set(
+            list(fixtures_df['home_team_id'].astype(int)) + 
+            list(fixtures_df['away_team_id'].astype(int))
+        ))
+        step2_time = time.time() - step2_start
+        st.sidebar.text(f"Step 2 (team IDs): {step2_time:.2f}s")
+        
+        step3_start = time.time()
+        form_cache = prepare_bulk_team_forms(unique_team_ids, last_n=5)
+        step3_time = time.time() - step3_start
+        st.sidebar.text(f"Step 3 (forms): {step3_time:.2f}s")
+        
+        step4_start = time.time()
+        fixture_pairs = list(zip(
+            fixtures_df['home_team_id'].astype(int),
+            fixtures_df['away_team_id'].astype(int)
+        ))
+        h2h_cache = prepare_bulk_h2h_records(fixture_pairs)
+        step4_time = time.time() - step4_start
+        st.sidebar.text(f"Step 4 (H2H): {step4_time:.2f}s")
+        
+        step5_start = time.time()
+        # Data enrichment
+        fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        fixtures_df['home_form_html'] = fixtures_df['home_form'].apply(format_form_html)
+        fixtures_df['away_form_html'] = fixtures_df['away_form'].apply(format_form_html)
+        fixtures_df['h2h'] = fixtures_df.apply(
+            lambda row: h2h_cache.get((int(row['home_team_id']), int(row['away_team_id'])), "No H2H"),
+            axis=1
+        )
+        fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
+        step5_time = time.time() - step5_start
+        st.sidebar.text(f"Step 5 (enrich): {step5_time:.2f}s")
+        
+        step6_start = time.time()
+        render_fixtures_table(fixtures_df)
+        step6_time = time.time() - step6_start
+        st.sidebar.text(f"Step 6 (table): {step6_time:.2f}s")
+        
+        step7_start = time.time()
+        # Lazy loading section
+        if 'show_all_fixtures' not in st.session_state:
+            st.session_state.show_all_fixtures = False
+        
+        initial_limit = 10
+        total_fixtures = len(fixtures_df)
+        
+        if total_fixtures <= initial_limit:
+            for idx, match in fixtures_df.iterrows():
+                render_match_details(match, idx)
+        else:
+            if not st.session_state.show_all_fixtures:
+                for idx, match in fixtures_df.head(initial_limit).iterrows():
+                    render_match_details(match, idx)
+            else:
+                for idx, match in fixtures_df.iterrows():
+                    render_match_details(match, idx)
+        
+        step7_time = time.time() - step7_start
+        st.sidebar.text(f"Step 7 (render details): {step7_time:.2f}s")
+        
+    except Exception as e:
+        st.error(f"Error: {e}")
+        st.exception(e)
+
 if __name__ == "__main__":
     fixtures()
