@@ -4,22 +4,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import column, select, func, desc, and_, or_, text
 from sqlalchemy.orm import Session
 import pandas as pd
-# from services.db import get_engine
-# from services.cache import cache_query_result
 import logging
-# from src.models.team_overview import TeamOverview
-# from src.models.team_form import TeamForm
-# from src.models.team_season_summary import TeamSeasonSummary
-# from src.models.team_attack import TeamAttack
-# from src.models.team_defense import TeamDefense
-# from src.models.team_possession import TeamPossession
-# from src.models.team_discipline import TeamDiscipline
-# from src.models.head_to_head import HeadToHead
-# from src.models.upcoming_predictions import UpcomingPredictions
-# from src.models.team_btts_analysis import TeamBttsAnalysis
-# from src.models.league_averages import LeagueAverages
-# from src.models.fact_match import FactMatch
-# from services.db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -889,6 +874,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
 
 
 # Helper function to get all seasons
+
 def get_all_seasons() -> pd.DataFrame:
     """
     Get list of all available seasons.
