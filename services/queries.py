@@ -910,7 +910,7 @@ def get_all_seasons() -> pd.DataFrame:
 
 from services.cache import cache_query_result
 
-@cache_query_result(ttl=300)
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_upcoming_fixtures_count(
     tournament_id: Optional[int] = None, 
     season_id: Optional[int] = None
@@ -954,7 +954,7 @@ def get_upcoming_fixtures_count(
     finally:
         db.close()
 
-@cache_query_result(ttl=600)
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_upcoming_fixtures_list(
     tournament_id: Optional[int] = None,
     season_id: Optional[int] = None,
