@@ -37,7 +37,6 @@ time_page_load = get_time_page_load()
 # CACHED DATA PREPARATION FUNCTIONS (NOT Plotly objects!)
 # ============================================================================
 
-@st.cache_data(ttl=600, show_spinner=False)
 def prepare_fixtures_data(start_date, end_date, max_fixtures):
     """
     Fetch and prepare fixtures data with caching.
@@ -52,7 +51,6 @@ def prepare_fixtures_data(start_date, end_date, max_fixtures):
     )
     return fixtures_df
 
-@st.cache_data(ttl=600, show_spinner=False)
 def prepare_bulk_team_forms(team_ids: list, last_n: int = 5):
     """
     BATCH FETCH: Get forms for multiple teams in one cached call.
@@ -87,7 +85,6 @@ def prepare_bulk_team_forms(team_ids: list, last_n: int = 5):
     
     return form_cache
 
-@st.cache_data(ttl=600, show_spinner=False)
 def prepare_bulk_h2h_records(fixture_pairs: list):
     """
     BATCH FETCH: Get H2H records for multiple fixture pairs.
