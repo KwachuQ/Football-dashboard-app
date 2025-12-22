@@ -22,6 +22,8 @@ from contextlib import contextmanager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+TIMINGS: dict[str, list[float]] = {}
+
 @contextmanager
 def timed_log(name: str):
     start = perf_counter()
@@ -29,6 +31,8 @@ def timed_log(name: str):
         yield
     finally:
         elapsed = perf_counter() - start
+        # record timing
+        TIMINGS.setdefault(name, []).append(elapsed)
         logger.info(f"{name} took {elapsed:.2f} seconds")
 
 # Hide default Streamlit sidebar first item (menu)
@@ -92,6 +96,22 @@ def calculate_data_age(last_update: Optional[datetime]) -> str:
     else:
         days = delta.days
         return f"{days} day{'s' if days != 1 else ''} ago"
+
+def log_timing_summary() -> None:
+    """Log per-task totals and overall total to the configured logger."""
+    if not TIMINGS:
+        logger.info("Timing summary: no timed sections recorded.")
+        return
+
+    total_all = sum(sum(times) for times in TIMINGS.values())
+    logger.info("---- Timing summary ----")
+    for name, times in TIMINGS.items():
+        s = sum(times)
+        cnt = len(times)
+        avg = s / cnt if cnt else 0.0
+        logger.info(f"{name}: total={s:.3f}s over {cnt} call(s) (avg={avg:.3f}s)")
+    logger.info(f"TOTAL PAGE LOAD TIME: {total_all:.3f}s")
+    logger.info("------------------------")
 
 # Main page content
 st.title("⚽ Football Analytics Dashboard")
@@ -185,6 +205,8 @@ with col2:
         st.metric("Cache Hit Rate", f"{hit_rate:.1f}%")
     except Exception as e:
         st.warning("Cache monitoring unavailable")
+
+log_timing_summary()
 
 # # Data Freshness
 # st.header("Data Freshness")
