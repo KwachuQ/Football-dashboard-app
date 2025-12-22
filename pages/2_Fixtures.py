@@ -358,32 +358,98 @@ def fixtures():
         
         st.success(f"Found {len(fixtures_df)} fixtures")
         
-        # STEP 2: Prepare unique team IDs for BATCH fetching
+        # ========================================================================
+        # DEBUG: KAŻDA LINIA Z TIMINGIEM
+        # ========================================================================
+        st.sidebar.markdown("### CACHE TEST")
+
+        # Test 1: Wywołaj get_team_form 2x dla tego samego team_id
+        test_start = time.time()
+        from services.queries import get_team_form
+        test_team_id = int(fixtures_df.iloc[0]['home_team_id'])
+
+        call1_start = time.time()
+        result1 = get_team_form(test_team_id, 5)
+        call1_time = time.time() - call1_start
+
+        call2_start = time.time()
+        result2 = get_team_form(test_team_id, 5)  # Should be CACHED (0ms)
+        call2_time = time.time() - call2_start
+
+        st.sidebar.text(f"Cache test (team_id={test_team_id}):")
+        st.sidebar.text(f"  1st call: {call1_time*1000:.0f}ms")
+        st.sidebar.text(f"  2nd call: {call2_time*1000:.0f}ms")
+
+        if call2_time < 0.01:  # <10ms = cached
+            st.sidebar.success("CACHE WORKS!")
+        else:
+            st.sidebar.error(f"CACHE BROKEN! 2nd call = {call2_time*1000:.0f}ms")
+        debug_1 = time.time()
         unique_team_ids = list(set(
             list(fixtures_df['home_team_id'].astype(int)) + 
             list(fixtures_df['away_team_id'].astype(int))
         ))
+        st.sidebar.text(f"DEBUG 1 (unique IDs): {time.time() - debug_1:.2f}s")
+        st.sidebar.text(f"  -> {len(unique_team_ids)} unique teams")
         
-        # STEP 3: BATCH FETCH team forms (CACHED - single call for all teams!)
+        debug_2 = time.time()
         form_cache = prepare_bulk_team_forms(unique_team_ids, last_n=5)
+        debug_2_time = time.time() - debug_2
+        st.sidebar.text(f"DEBUG 2 (forms): {debug_2_time:.2f}s")
+        st.sidebar.text(f"  -> {len(unique_team_ids)} teams × get_team_form()")
         
-        # STEP 4: BATCH FETCH H2H records (CACHED)
+        # DEEP DEBUG dla prepare_bulk_team_forms
+        if debug_2_time > 1.0:
+            st.sidebar.warning(f"SLOW: prepare_bulk_team_forms took {debug_2_time:.2f}s")
+            st.sidebar.text(f"  -> This means {debug_2_time/len(unique_team_ids)*1000:.0f}ms per team")
+        
+        debug_3 = time.time()
         fixture_pairs = list(zip(
             fixtures_df['home_team_id'].astype(int),
             fixtures_df['away_team_id'].astype(int)
         ))
-        h2h_cache = prepare_bulk_h2h_records(fixture_pairs)
+        st.sidebar.text(f"DEBUG 3 (pairs): {time.time() - debug_3:.2f}s")
+        st.sidebar.text(f"  -> {len(fixture_pairs)} fixture pairs")
         
-        # STEP 5: Enrich fixtures_df with cached data (FAST - no DB calls!)
+        debug_4 = time.time()
+        h2h_cache = prepare_bulk_h2h_records(fixture_pairs)
+        debug_4_time = time.time() - debug_4
+        st.sidebar.text(f"DEBUG 4 (H2H): {debug_4_time:.2f}s")
+        st.sidebar.text(f"  -> {len(fixture_pairs)} pairs × get_head_to_head()")
+        
+        # DEEP DEBUG dla prepare_bulk_h2h_records
+        if debug_4_time > 1.0:
+            st.sidebar.warning(f"SLOW: prepare_bulk_h2h_records took {debug_4_time:.2f}s")
+            st.sidebar.text(f"  -> This means {debug_4_time/len(fixture_pairs)*1000:.0f}ms per H2H")
+        
+        debug_5 = time.time()
         fixtures_df['home_form'] = fixtures_df['home_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        st.sidebar.text(f"DEBUG 5a (home_form): {time.time() - debug_5:.2f}s")
+        
+        debug_5b = time.time()
         fixtures_df['away_form'] = fixtures_df['away_team_id'].apply(lambda x: form_cache.get(int(x), "N/A"))
+        st.sidebar.text(f"DEBUG 5b (away_form): {time.time() - debug_5b:.2f}s")
+        
+        debug_5c = time.time()
         fixtures_df['home_form_html'] = fixtures_df['home_form'].apply(format_form_html)
+        st.sidebar.text(f"DEBUG 5c (home_html): {time.time() - debug_5c:.2f}s")
+        
+        debug_5d = time.time()
         fixtures_df['away_form_html'] = fixtures_df['away_form'].apply(format_form_html)
+        st.sidebar.text(f"DEBUG 5d (away_html): {time.time() - debug_5d:.2f}s")
+        
+        debug_5e = time.time()
         fixtures_df['h2h'] = fixtures_df.apply(
             lambda row: h2h_cache.get((int(row['home_team_id']), int(row['away_team_id'])), "No H2H"),
             axis=1
         )
+        st.sidebar.text(f"DEBUG 5e (h2h map): {time.time() - debug_5e:.2f}s")
+        
+        debug_5f = time.time()
         fixtures_df['prediction'] = fixtures_df.apply(format_prediction, axis=1)
+        st.sidebar.text(f"DEBUG 5f (prediction): {time.time() - debug_5f:.2f}s")
+        
+        st.sidebar.text(f"DEBUG 5 TOTAL (enrich): {time.time() - debug_5:.2f}s")
         
     except Exception as e:
         st.error(f"Error loading fixtures: {e}")
