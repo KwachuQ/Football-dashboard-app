@@ -61,64 +61,55 @@ def prepare_fixtures_data(start_date, end_date, max_fixtures):
 
 def prepare_bulk_team_forms(team_ids: list, last_n: int = 5):
     """
-    BATCH FETCH: Get forms for multiple teams in one cached call.
-    Avoids N+1 query problem (1 cache call instead of N individual calls).
-    
-    Args:
-        team_ids: List of unique team IDs
-        last_n: Number of recent matches to fetch
-    
-    Returns:
-        Dict mapping team_id -> form_string
+    Use BATCH query from services/queries.py
     """
     from services.queries import get_bulk_team_forms
     
+    # SINGLE DB QUERY for all teams!
+    forms_dict = get_bulk_team_forms(team_ids, last_n)
+    
+    # Format output
     form_cache = {}
     for team_id in team_ids:
-        try:
-            team_id_int = int(team_id)
-            form_data = get_bulk_team_forms(team_ids, last_n)
-            
-            if not form_data:
-                form_cache[team_id_int] = "N/A"
-                continue
-            
-            last_5 = form_data.get('last_5_results')
-            if last_5 and isinstance(last_5, str) and len(last_5.strip()) > 0:
-                form_cache[team_id_int] = last_5.strip()[:5]
-            else:
-                form_cache[team_id_int] = "N/A"
-        except Exception:
-            pass
+        team_id_int = int(team_id)
+        form_data = forms_dict.get(team_id_int)
+        
+        if not form_data:
+            form_cache[team_id_int] = "N/A"
+            continue
+        
+        last_5 = form_data.get('last_5_results')
+        if last_5 and isinstance(last_5, str) and len(last_5.strip()) > 0:
+            form_cache[team_id_int] = last_5.strip()[:5]
+        else:
+            form_cache[team_id_int] = "N/A"
     
     return form_cache
 
 def prepare_bulk_h2h_records(fixture_pairs: list):
     """
-    BATCH FETCH: Get H2H records for multiple fixture pairs.
-    
-    Args:
-        fixture_pairs: List of tuples [(home_id, away_id), ...]
-    
-    Returns:
-        Dict mapping (home_id, away_id) -> h2h_string
+    Use BATCH query from services/queries.py
     """
     from services.queries import get_bulk_head_to_head
     
+    # SINGLE DB QUERY for all pairs!
+    h2h_dict = get_bulk_head_to_head(fixture_pairs)
+    
+    # Format output
     h2h_cache = {}
     for home_id, away_id in fixture_pairs:
-        try:
-            h2h_data = get_bulk_head_to_head(fixture_pairs)
-            if h2h_data and h2h_data.get('total_matches', 0) > 0:
-                if h2h_data['team1_id'] == home_id:
-                    h2h_string = f"{h2h_data['team1_wins']}-{h2h_data['draws']}-{h2h_data['team2_wins']}"
-                else:
-                    h2h_string = f"{h2h_data['team2_wins']}-{h2h_data['draws']}-{h2h_data['team1_wins']}"
-                h2h_cache[(home_id, away_id)] = h2h_string
-            else:
-                h2h_cache[(home_id, away_id)] = "No H2H"
-        except:
+        h2h_data = h2h_dict.get((home_id, away_id))
+        
+        if not h2h_data or h2h_data.get('total_matches', 0) == 0:
             h2h_cache[(home_id, away_id)] = "No H2H"
+            continue
+        
+        if h2h_data['team1_id'] == home_id:
+            h2h_string = f"{h2h_data['team1_wins']}-{h2h_data['draws']}-{h2h_data['team2_wins']}"
+        else:
+            h2h_string = f"{h2h_data['team2_wins']}-{h2h_data['draws']}-{h2h_data['team1_wins']}"
+        
+        h2h_cache[(home_id, away_id)] = h2h_string
     
     return h2h_cache
 
