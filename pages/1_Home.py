@@ -7,6 +7,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import logging
+from time import perf_counter
+from contextlib import contextmanager
 
 # # Ensure project root is importable
 # PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -19,6 +21,15 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+@contextmanager
+def timed_log(name: str):
+    start = perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = perf_counter() - start
+        logger.info(f"{name} took {elapsed:.2f} seconds")
 
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
@@ -86,7 +97,8 @@ def calculate_data_age(last_update: Optional[datetime]) -> str:
 st.title("⚽ Football Analytics Dashboard")
 st.markdown("Real-time football statistics, predictions, and team analysis")
 
-config = load_league_config()
+with timed_log("load_league_config"):
+    config = load_league_config()
 
 if not config:
     st.error("Failed to load configuration. Please check league_config.yaml")
@@ -125,7 +137,8 @@ season_id = active_season.get('season_id')
 with col1:
     try:
         from services.queries import get_all_seasons
-        seasons_df = get_all_seasons()
+        with timed_log("get_all_seasons"):
+            seasons_df = get_all_seasons()
         total_seasons = len(seasons_df) if not seasons_df.empty else 0
         st.metric("Total Seasons", total_seasons)
     except Exception as e:
@@ -137,7 +150,8 @@ with col2:
 with col3:
     try:
         from services.queries import get_upcoming_fixtures_count
-        fixtures_count = get_upcoming_fixtures_count(season_id=season_id)
+        with timed_log("get_upcoming_fixtures_count"):
+            fixtures_count = get_upcoming_fixtures_count(season_id=season_id)
         st.metric("Upcoming Fixtures", fixtures_count)
     except Exception as e:
         st.metric("Upcoming Fixtures", "Error")
@@ -152,7 +166,9 @@ with col1:
     st.subheader("Database Status")
     try:
         from services.db import test_connection
-        if test_connection():
+        with timed_log("test_connection"):
+            ok = test_connection()
+        if ok:
             st.success("🟢 Connected")
         else:
             st.error("🔴 Disconnected")
