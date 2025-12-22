@@ -71,13 +71,13 @@ def prepare_bulk_team_forms(team_ids: list, last_n: int = 5):
     Returns:
         Dict mapping team_id -> form_string
     """
-    from services.queries import get_team_form
+    from services.queries import get_bulk_team_forms
     
     form_cache = {}
     for team_id in team_ids:
         try:
             team_id_int = int(team_id)
-            form_data = get_team_form(team_id=team_id_int, last_n_matches=last_n)
+            form_data = get_bulk_team_forms(team_ids, last_n)
             
             if not form_data:
                 form_cache[team_id_int] = "N/A"
@@ -103,12 +103,12 @@ def prepare_bulk_h2h_records(fixture_pairs: list):
     Returns:
         Dict mapping (home_id, away_id) -> h2h_string
     """
-    from services.queries import get_head_to_head
+    from services.queries import get_bulk_head_to_head
     
     h2h_cache = {}
     for home_id, away_id in fixture_pairs:
         try:
-            h2h_data = get_head_to_head(home_id, away_id)
+            h2h_data = get_bulk_head_to_head(fixture_pairs)
             if h2h_data and h2h_data.get('total_matches', 0) > 0:
                 if h2h_data['team1_id'] == home_id:
                     h2h_string = f"{h2h_data['team1_wins']}-{h2h_data['draws']}-{h2h_data['team2_wins']}"

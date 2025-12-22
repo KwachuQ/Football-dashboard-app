@@ -1035,3 +1035,113 @@ def get_team_names() -> pd.DataFrame:
         return pd.DataFrame(result, columns=['team_id', 'team_name'])
     finally:
         db.close()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_bulk_team_forms(team_ids: list, last_n_matches: int = 5) -> dict:
+    """
+    BATCH FETCH: Get forms for multiple teams in ONE DB query.
+    
+    Args:
+        team_ids: List of team IDs
+        last_n_matches: Number of recent matches
+    
+    Returns:
+        Dict mapping team_id -> form_data
+    """
+    from services.db import get_db
+    from src.models.team_form import TeamForm
+    
+    if not team_ids:
+        return {}
+    
+    db = next(get_db())
+    try:
+        # SINGLE QUERY for all teams (instead of N queries!)
+        query = select(TeamForm).where(TeamForm.team_id.in_(team_ids))
+        results = db.execute(query).scalars().all()
+        
+        # Group by team_id
+        forms_dict = {}
+        for result in results:
+            if result.team_id not in forms_dict:
+                forms_dict[result.team_id] = {
+                    'team_id': result.team_id,
+                    'team_name': result.team_name,
+                    'last_5_results': result.last_5_results,
+                    'last_10_results': result.last_10_results,
+                    'last_15_results': result.last_15_results,
+                    'last_20_results': result.last_20_results,
+                    # ... other fields
+                }
+        
+        return forms_dict
+    
+    finally:
+        db.close()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_bulk_head_to_head(fixture_pairs: list) -> dict:
+    """
+    BATCH FETCH: Get H2H for multiple fixture pairs in ONE DB query.
+    
+    Args:
+        fixture_pairs: List of tuples [(home_id, away_id), ...]
+    
+    Returns:
+        Dict mapping (home_id, away_id) -> h2h_data
+    """
+    from services.db import get_db
+    from src.models.head_to_head import HeadToHead
+    from sqlalchemy import or_, and_
+    
+    if not fixture_pairs:
+        return {}
+    
+    db = next(get_db())
+    try:
+        # Build OR conditions for all pairs
+        conditions = []
+        for home_id, away_id in fixture_pairs:
+            conditions.append(
+                and_(
+                    or_(
+                        and_(HeadToHead.team_id_1 == home_id, HeadToHead.team_id_2 == away_id),
+                        and_(HeadToHead.team_id_1 == away_id, HeadToHead.team_id_2 == home_id)
+                    )
+                )
+            )
+        
+        # SINGLE QUERY for all pairs
+        query = select(HeadToHead).where(or_(*conditions))
+        results = db.execute(query).scalars().all()
+        
+        # Map to fixture pairs
+        h2h_dict = {}
+        for result in results:
+            # Try both orderings
+            key1 = (result.team_id_1, result.team_id_2)
+            key2 = (result.team_id_2, result.team_id_1)
+            
+            data = {
+                'team1_id': result.team_id_1,
+                'team2_id': result.team_id_2,
+                'team1_name': result.team_1_name,
+                'team2_name': result.team_2_name,
+                'total_matches': result.total_matches,
+                'team1_wins': result.team_1_wins,
+                'draws': result.draws,
+                'team2_wins': result.team_2_wins,
+                'team1_goals': result.team_1_goals,
+                'team2_goals': result.team_2_goals,
+                # ... other fields
+            }
+            
+            if key1 in fixture_pairs:
+                h2h_dict[key1] = data
+            if key2 in fixture_pairs:
+                h2h_dict[key2] = data
+        
+        return h2h_dict
+    
+    finally:
+        db.close()
