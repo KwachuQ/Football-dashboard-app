@@ -10,25 +10,7 @@ import plotly.express as px
 from typing import Optional, Dict, Any, Tuple
 import logging
 import time
-# import os
-# import sys
 from datetime import date, timedelta
-
-# # Ensure project root is importable
-# PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-# if PROJECT_ROOT not in sys.path:
-#     sys.path.append(PROJECT_ROOT)
-
-# from components.filters import date_range_filter
-# from services.queries import (
-#     get_upcoming_fixtures,
-#     get_head_to_head,
-#     get_all_team_stats,
-#     get_team_form,
-#     get_league_standings,
-#     get_btts_analysis,
-#     get_h2h_results
-# )
 
 # Configure logging
 logger = logging.getLogger(__name__)

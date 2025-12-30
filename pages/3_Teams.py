@@ -581,22 +581,6 @@ def teams():
 
         st.markdown("---")
 
-        # # Home/Away toggle
-        # location = home_away_toggle(
-        #     label="Filter by location",
-        #     key="teams_location",
-        #     default="all"
-        # )
-        
-        # if location != "all":
-        #     st.info("⚠️ Home/Away filtering will be available once per-match data is integrated.")
-
-    # ============================================================================
-    # TEAM SELECTOR
-    # ============================================================================
-
-
-
     # ============================================================================
     # TEAM HEADER
     # ============================================================================

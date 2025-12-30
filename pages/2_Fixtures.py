@@ -34,7 +34,7 @@ def show_timings_inline():
 time_page_load = get_time_page_load()
 
 # ============================================================================
-# CACHED DATA PREPARATION FUNCTIONS (NOT Plotly objects!)
+# CACHED DATA PREPARATION FUNCTIONS 
 # ============================================================================
 
 def prepare_fixtures_data(start_date, end_date, max_fixtures):
@@ -57,7 +57,7 @@ def prepare_bulk_team_forms(team_ids: list, last_n: int = 5):
     """
     from services.queries import get_bulk_team_forms
     
-    # SINGLE DB QUERY for all teams!
+    # Single query for all teams
     forms_dict = get_bulk_team_forms(team_ids, last_n)
     
     # Format output
@@ -84,7 +84,7 @@ def prepare_bulk_h2h_records(fixture_pairs: list):
     """
     from services.queries import get_bulk_head_to_head
     
-    # SINGLE DB QUERY for all pairs!
+    # Single query for all pairs
     h2h_dict = get_bulk_head_to_head(fixture_pairs)
     
     # Format output
@@ -106,7 +106,7 @@ def prepare_bulk_h2h_records(fixture_pairs: list):
     return h2h_cache
 
 # ============================================================================
-# HELPER FUNCTIONS (not cached, lightweight)
+# HELPER FUNCTIONS
 # ============================================================================
 
 def format_prediction(row):
