@@ -6,3 +6,4 @@ __pycache__/
 .vscode/
 Football-dashboard-app.code-workspace
 aws_logs/
+.idea/
