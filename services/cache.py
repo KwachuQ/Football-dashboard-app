@@ -10,8 +10,12 @@ import logging
 import hashlib
 import json
 import time
+import threading
 
 logger = logging.getLogger(__name__)
+
+# Thread-local storage to track if the actual function was called (a cache miss)
+_cache_tracking = threading.local()
 
 # ============================================================================
 # Loading time logging
@@ -60,13 +64,8 @@ def show_timings_inline():
 def cache_resource_singleton():
     """
     Decorator for caching singleton resources like database engines.
-    
-    Usage:
-        @cache_resource_singleton()
-        def get_engine():
-            return create_engine(...)
     """
-    return st.cache_resource(ttl=None, show_spinner=False)
+    return cache_with_monitoring(type='resource', ttl=None)
 
 
 def cache_query_result(ttl: int = 600):
@@ -75,13 +74,8 @@ def cache_query_result(ttl: int = 600):
     
     Args:
         ttl: Time to live in seconds (default: 600 = 10 minutes)
-    
-    Usage:
-        @cache_query_result(ttl=300)
-        def get_team_stats(team_id: int):
-            ...
     """
-    return st.cache_data(ttl=ttl, show_spinner=False)
+    return cache_with_monitoring(type='data', ttl=ttl)
 
 
 # ============================================================================
@@ -283,30 +277,44 @@ def generate_cache_key(*args, **kwargs) -> str:
     return hashlib.md5(serialized.encode()).hexdigest()
 
 
-def cache_with_monitoring(ttl: int = 600):
+def cache_with_monitoring(type: str = 'data', ttl: Optional[int] = 600):
     """
     Decorator that adds cache monitoring to cached functions.
     
     Args:
+        type: 'data' (st.cache_data) or 'resource' (st.cache_resource)
         ttl: Time to live in seconds
-    
-    Usage:
-        @cache_with_monitoring(ttl=300)
-        def expensive_query():
-            ...
     """
     def decorator(func: Callable) -> Callable:
-        # Apply Streamlit cache
-        cached_func = st.cache_data(ttl=ttl, show_spinner=False)(func)
+        # Select the appropriate Streamlit cache decorator
+        if type == 'resource':
+            st_decorator = st.cache_resource(ttl=ttl, show_spinner=False)
+        else:
+            st_decorator = st.cache_data(ttl=ttl, show_spinner=False)
+            
+        @st_decorator
+        @wraps(func)
+        def cached_wrapper(*args, **kwargs):
+            # If this executes, it's a CACHE MISS
+            _cache_tracking.was_called = True
+            return func(*args, **kwargs)
         
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # Reset tracking for this call
+            _cache_tracking.was_called = False
+            
             monitor = CacheMonitor()
             
             try:
-                # Try to get from cache
-                result = cached_func(*args, **kwargs)
-                monitor.record_hit()
+                result = cached_wrapper(*args, **kwargs)
+                
+                # Check if it was a hit or miss
+                if getattr(_cache_tracking, 'was_called', False):
+                    monitor.record_miss()
+                else:
+                    monitor.record_hit()
+                    
                 return result
             except Exception as e:
                 monitor.record_error()

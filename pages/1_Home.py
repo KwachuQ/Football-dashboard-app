@@ -22,7 +22,7 @@ def show_timings_inline():
     from services.cache import show_timings_inline
     return show_timings_inline
 
-time_page_load = get_time_page_load()
+from services.cache import time_page_load, cache_query_result
 
 # Hide default Streamlit sidebar first item (menu)
 st.markdown("""
@@ -43,7 +43,7 @@ def _get_project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 # Helper functions
-@st.cache_data(ttl=3600)
+@cache_query_result(ttl=3600)
 def load_league_config() -> Dict[str, Any]:
     config_path = _get_project_root() / "config" / "league_config.yaml"
     try:
@@ -53,21 +53,21 @@ def load_league_config() -> Dict[str, Any]:
         logger.error(f"Error loading league config: {e}")
         return {}
     
-@st.cache_data(ttl=3600)
+@cache_query_result(ttl=3600)
 def get_active_league(config: Dict[str, Any]) -> Dict[str, Any]:
     active = config.get('active_league', {})
     return {
         'country': active.get('country', 'Poland'),
         'league_id': active.get('league_id', 202),
     }
-@st.cache_data(ttl=3600)
+@cache_query_result(ttl=3600)
 def get_active_season(config: Dict[str, Any]) -> Dict[str, Any]:
     active = config.get('active_season', {})
     return {
         'name': active.get('name', 'Ekstraklasa 25/26'),
         'season_id': active.get('season_id', 76477),
     }
-@st.cache_data(ttl=3600)
+@cache_query_result(ttl=3600)
 def calculate_data_age(last_update: Optional[datetime]) -> str:
     if last_update is None:
         return "Never"

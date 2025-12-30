@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 import logging
 import streamlit as st
+from services.cache import cache_query_result, cache_resource_singleton
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
         except Exception:
             return default
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_upcoming_fixtures(
     season_id: Optional[int] = None,
     tournament_id: Optional[int] = None,
@@ -241,7 +242,7 @@ def get_team_form(team_id: int, last_n_matches: int = 5) -> Dict[str, Any]:
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_all_team_stats(
     team_id: int,
     season_id: Optional[int] = None
@@ -348,7 +349,7 @@ def get_all_team_stats(
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_team_stats(
     stat_type: str,
     season_id: Optional[int] = None,
@@ -465,7 +466,7 @@ def get_team_stats(
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_league_averages(
     season_id: int
 ) -> Dict[str, Any]:
@@ -511,7 +512,7 @@ def get_league_averages(
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_head_to_head(
     team1_id: int,
     team2_id: int,
@@ -585,7 +586,7 @@ def get_head_to_head(
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_h2h_results(team_id_1: int, team_id_2: int, limit: int = 5) -> pd.DataFrame:
     team_id_1 = _safe_int(team_id_1)
     team_id_2 = _safe_int(team_id_2)
@@ -794,7 +795,7 @@ def get_league_standings(season_id: int) -> pd.DataFrame:
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str, Any]:
     """
     Get Both Teams To Score (BTTS) analysis for a team.
@@ -936,7 +937,7 @@ def get_btts_analysis(team_id: int, season_id: Optional[int] = None) -> Dict[str
 
 
 # Helper function to get all seasons
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_all_seasons() -> pd.DataFrame:
     """
     Get list of all available seasons.
@@ -962,7 +963,7 @@ def get_all_seasons() -> pd.DataFrame:
 
 from services.cache import cache_query_result
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_upcoming_fixtures_count(
     tournament_id: Optional[int] = None, 
     season_id: Optional[int] = None
@@ -1006,7 +1007,7 @@ def get_upcoming_fixtures_count(
     finally:
         db.close()
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@cache_query_result(ttl=1200)
 def get_upcoming_fixtures_list(
     tournament_id: Optional[int] = None,
     season_id: Optional[int] = None,
@@ -1088,7 +1089,7 @@ def get_team_names() -> pd.DataFrame:
     finally:
         db.close()
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@cache_query_result(ttl=1800)
 def get_bulk_team_forms(team_ids: list, last_n_matches: int = 5) -> dict:
     """
     BATCH FETCH: Get forms for multiple teams in ONE DB query.
@@ -1131,7 +1132,7 @@ def get_bulk_team_forms(team_ids: list, last_n_matches: int = 5) -> dict:
     finally:
         db.close()
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@cache_query_result(ttl=1800)
 def get_bulk_head_to_head(fixture_pairs: list) -> dict:
     """
     BATCH FETCH: Get H2H for multiple fixture pairs in ONE DB query.
@@ -1198,7 +1199,7 @@ def get_bulk_head_to_head(fixture_pairs: list) -> dict:
     finally:
         db.close()
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@cache_query_result(ttl=1800)
 def get_bulk_league_stats(season_id: int) -> Dict[str, pd.DataFrame]:
     """
     Get statistics for all teams in a league in one batch.

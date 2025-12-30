@@ -108,9 +108,11 @@ from typing import Generator, Optional
 import logging
 from urllib.parse import quote_plus
 
+from services.cache import cache_resource_singleton
+
 logger = logging.getLogger(__name__)
 
-@st.cache_resource
+@cache_resource_singleton()
 def get_engine():
     """Get database settings (cached)."""
     from config.settings import get_db_settings
