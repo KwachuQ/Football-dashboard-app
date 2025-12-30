@@ -1453,8 +1453,9 @@ def compare():
         
         with tab2:
             try:
-                home_season = get_all_team_stats(home_team_id, season_id).get("season_summary", {})
-                away_season = get_all_team_stats(away_team_id, season_id).get("season_summary", {})
+                # Use data already fetched at page level (home_stats, away_stats)
+                home_season = home_stats.get("season_summary", {})
+                away_season = away_stats.get("season_summary", {})
                 render_halves_scored_table(home_team_name, away_team_name, home_season, away_season)
             except Exception as e:
                 logger.error(f"Error loading half-time scoring data: {e}")
@@ -1486,8 +1487,9 @@ def compare():
         
         with tab2:
             try:
-                home_season = get_all_team_stats(home_team_id, season_id).get("season_summary", {})
-                away_season = get_all_team_stats(away_team_id, season_id).get("season_summary", {})
+                # Use data already fetched at page level
+                home_season = home_stats.get("season_summary", {})
+                away_season = away_stats.get("season_summary", {})
                 render_halves_conceded_table(home_team_name, away_team_name, home_season, away_season)
             except Exception as e:
                 logger.error(f"Error loading half-time defensive data: {e}")
@@ -1635,7 +1637,7 @@ def compare():
     current_time = time.time() - page_start
     if 'timings' not in st.session_state:
         st.session_state.timings = {}
-    st.session_state.timings['Home'] = f"{current_time:.2f}s"
+    st.session_state.timings['Compare'] = f"{current_time:.2f}s"
 
     show_timings = show_timings_inline()
     show_timings()  

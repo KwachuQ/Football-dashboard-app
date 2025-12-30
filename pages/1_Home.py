@@ -18,10 +18,6 @@ def get_time_page_load():
     from services.cache import time_page_load
     return time_page_load
 
-def get_show_timings_sidebar():
-    from services.cache import show_timings_sidebar
-    return show_timings_sidebar
-
 def show_timings_inline():
     from services.cache import show_timings_inline
     return show_timings_inline

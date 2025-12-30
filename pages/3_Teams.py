@@ -208,7 +208,8 @@ def draw_team_radar(
     )
     
     # Create figure
-    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=200)
+    # Optimized DPI for faster rendering (100 is enough for web)
+    fig, ax = plt.subplots(figsize=(4.50, 4.50), facecolor='white', dpi=100)
     
     # Setup radar axis
     radar.setup_axis(ax=ax, facecolor='white')
@@ -663,11 +664,14 @@ def teams():
         # Get league averages
         league_averages = get_league_averages(selected_season_id)
         
-        # Get ALL teams' data for percentile calculations (4 calls total for all tabs)
-        all_teams_attack = lazy_get_team_stats('attack', season_id=selected_season_id, team_id=None)
-        all_teams_defense = lazy_get_team_stats('defense', season_id=selected_season_id, team_id=None)
-        all_teams_possession = lazy_get_team_stats('possession', season_id=selected_season_id, team_id=None)
-        all_teams_discipline = lazy_get_team_stats('discipline', season_id=selected_season_id, team_id=None)
+        # Get ALL teams' data for percentile calculations in ONE bulk call
+        from services.queries import get_bulk_league_stats
+        league_stats = get_bulk_league_stats(selected_season_id)
+        
+        all_teams_attack = league_stats.get('attack', pd.DataFrame())
+        all_teams_defense = league_stats.get('defense', pd.DataFrame())
+        all_teams_possession = league_stats.get('possession', pd.DataFrame())
+        all_teams_discipline = league_stats.get('discipline', pd.DataFrame())
 
     except Exception as e:
         logger.error(f"Error loading team stats: {e}")
@@ -1263,7 +1267,7 @@ def teams():
     current_time = time.time() - page_start
     if 'timings' not in st.session_state:
         st.session_state.timings = {}
-    st.session_state.timings['Home'] = f"{current_time:.2f}s"
+    st.session_state.timings['Teams'] = f"{current_time:.2f}s"
 
     show_timings = show_timings_inline()
     show_timings()  

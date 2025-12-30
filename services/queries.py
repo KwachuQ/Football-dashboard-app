@@ -224,6 +224,10 @@ def get_all_team_stats(
     team_id: int,
     season_id: Optional[int] = None
 ) -> Dict[str, Dict[str, Any]]:
+    """
+    Get all team statistics categories in a few database calls.
+    Optimized to reduce roundtrips.
+    """
     from src.models.team_attack import TeamAttack
     from src.models.team_defense import TeamDefense
     from src.models.team_possession import TeamPossession
@@ -232,24 +236,23 @@ def get_all_team_stats(
     from src.models.team_btts_analysis import TeamBttsAnalysis
     from src.models.team_season_summary import TeamSeasonSummary
     from services.db import get_db
-    """
-    Get all team statistics categories in a single database call.
-    
-    Args:
-        team_id: Team identifier
-        season_id: Season to filter by (None for latest)
-    
-    Returns:
-        Dictionary with keys 'attack', 'defense', 'possession', 'discipline', 'overview', 'btts'
-        Each value is a dict of statistics for that category
-    """
+    from sqlalchemy import inspect
+
     db = next(get_db())
     team_id = _safe_int(team_id)
-    if season_id is not None:
-        season_id = _safe_int(season_id)
-
+    
     try:
-        from sqlalchemy import inspect
+        # If no season_id provided, get latest season once
+        if not season_id:
+            subquery = select(func.max(TeamOverview.season_id)).where(
+                TeamOverview.team_id == team_id
+            ).scalar_subquery()
+            season_id = db.execute(select(subquery)).scalar()
+        else:
+            season_id = _safe_int(season_id)
+
+        if not season_id:
+            return {}
 
         model_map = {
             'attack': TeamAttack,
@@ -263,34 +266,61 @@ def get_all_team_stats(
         
         results = {}
         
-        # If no season_id provided, get latest season once
-        if not season_id:
-            subquery = select(func.max(TeamOverview.season_id)).where(
-                TeamOverview.team_id == team_id
-            ).scalar_subquery()
-            season_id = db.execute(select(subquery)).scalar()
+        # Use a single query for multiple models by selecting them as a tuple
+        # Note: We use outerjoin to handle cases where a team might be missing from some tables
+        query = select(
+            TeamAttack, TeamDefense, TeamPossession, TeamDiscipline, 
+            TeamOverview, TeamBttsAnalysis, TeamSeasonSummary
+        ).outerjoin(
+            TeamDefense, and_(TeamDefense.team_id == TeamAttack.team_id, TeamDefense.season_id == TeamAttack.season_id)
+        ).outerjoin(
+            TeamPossession, and_(TeamPossession.team_id == TeamAttack.team_id, TeamPossession.season_id == TeamAttack.season_id)
+        ).outerjoin(
+            TeamDiscipline, and_(TeamDiscipline.team_id == TeamAttack.team_id, TeamDiscipline.season_id == TeamAttack.season_id)
+        ).outerjoin(
+            TeamOverview, and_(TeamOverview.team_id == TeamAttack.team_id, TeamOverview.season_id == TeamAttack.season_id)
+        ).outerjoin(
+            TeamBttsAnalysis, and_(TeamBttsAnalysis.team_id == TeamAttack.team_id, TeamBttsAnalysis.season_id == TeamAttack.season_id)
+        ).outerjoin(
+            TeamSeasonSummary, and_(TeamSeasonSummary.team_id == TeamAttack.team_id, TeamSeasonSummary.season_id == TeamAttack.season_id)
+        ).where(
+            TeamAttack.team_id == team_id,
+            TeamAttack.season_id == season_id
+        )
         
-        # Query all models in one transaction
-        for stat_type, model in model_map.items():
-            query = select(model).where(
-                model.team_id == team_id,
-                model.season_id == season_id
-            )
-            
-            result = db.execute(query).scalar_one_or_none()
-            
-            if result:
-                mapper = inspect(result.__class__)
-                results[stat_type] = {
-                    column.key: (
-                        float(getattr(result, column.key)) 
-                        if isinstance(getattr(result, column.key), Decimal)
-                        else getattr(result, column.key)
-                    )
-                    for column in mapper.columns
-                }
-            else:
-                results[stat_type] = {}
+        row = db.execute(query).fetchone()
+        
+        if row:
+            for i, (stat_type, model) in enumerate(model_map.items()):
+                result = row[i]
+                if result:
+                    mapper = inspect(result.__class__)
+                    results[stat_type] = {
+                        column.key: (
+                            float(getattr(result, column.key)) 
+                            if isinstance(getattr(result, column.key), Decimal)
+                            else getattr(result, column.key)
+                        )
+                        for column in mapper.columns
+                    }
+                else:
+                    results[stat_type] = {}
+        else:
+            # Fallback to individual queries if the first join failed (e.g. team missing from TeamAttack)
+            for stat_type, model in model_map.items():
+                res = db.execute(select(model).where(model.team_id == team_id, model.season_id == season_id)).scalar_one_or_none()
+                if res:
+                    mapper = inspect(res.__class__)
+                    results[stat_type] = {
+                        column.key: (
+                            float(getattr(res, column.key)) 
+                            if isinstance(getattr(res, column.key), Decimal)
+                            else getattr(res, column.key)
+                        )
+                        for column in mapper.columns
+                    }
+                else:
+                    results[stat_type] = {}
         
         return results
     finally:
@@ -1143,5 +1173,57 @@ def get_bulk_head_to_head(fixture_pairs: list) -> dict:
         
         return h2h_dict
     
+    finally:
+        db.close()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_bulk_league_stats(season_id: int) -> Dict[str, pd.DataFrame]:
+    """
+    Get statistics for all teams in a league in one batch.
+    
+    Returns:
+        Dict mapping stat_type -> DataFrame
+    """
+    from src.models.team_attack import TeamAttack
+    from src.models.team_defense import TeamDefense
+    from src.models.team_possession import TeamPossession
+    from src.models.team_discipline import TeamDiscipline
+    from services.db import get_db
+    from sqlalchemy import select
+    from decimal import Decimal
+    
+    season_id = _safe_int(season_id)
+    db = next(get_db())
+    
+    try:
+        results = {}
+        model_map = {
+            'attack': TeamAttack,
+            'defense': TeamDefense,
+            'possession': TeamPossession,
+            'discipline': TeamDiscipline
+        }
+        
+        from sqlalchemy import inspect
+        
+        for stat_type, model in model_map.items():
+            query = select(model).where(model.season_id == season_id)
+            rows = db.execute(query).scalars().all()
+            
+            data = []
+            for r in rows:
+                mapper = inspect(r.__class__)
+                row_dict = {
+                    column.key: (
+                        float(getattr(r, column.key)) 
+                        if isinstance(getattr(r, column.key), Decimal) and getattr(r, column.key) is not None
+                        else (getattr(r, column.key) if getattr(r, column.key) is not None else 0)
+                    )
+                    for column in mapper.columns
+                }
+                data.append(row_dict)
+            results[stat_type] = pd.DataFrame(data)
+            
+        return results
     finally:
         db.close()

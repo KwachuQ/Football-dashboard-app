@@ -8,12 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-def get_show_timings_sidebar():
-    """Lazy import show_timings_sidebar dla app.py"""
-    from services.cache import show_timings_sidebar
-    return show_timings_sidebar
 
-show_timings_sidebar = get_show_timings_sidebar()
 
 st.set_page_config(
     page_title="Football Analytics Dashboard",
@@ -29,6 +24,12 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+from services.cache import CacheWarmer
+
+# Warm cache for common queries (don't block the main thread for too long)
+# Since the queries are cached, this will only hit the DB once
+CacheWarmer.warm_common_queries()
 
 st.switch_page("pages/1_Home.py")
 
