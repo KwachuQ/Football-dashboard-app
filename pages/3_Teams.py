@@ -58,6 +58,40 @@ st.markdown("""
     [data-testid="stMetricValue"] {
         font-size: 24px;
     }
+    /* Team Name Box */
+    .team-name-box {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1.05;
+        margin-bottom: 20px;
+    }
+    /* Stat Boxes */
+    .stat-box {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin: 4px 0;
+        height: 100%;
+    }
+    .stat-box-label {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 4px;
+        font-weight: 500;
+    }
+    .stat-box-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #111827;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -154,6 +188,16 @@ def prepare_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
     This prevents Arrow serialization issues with mixed types.
     """
     return df.astype(str)
+
+def render_stat_box(label: str, value: Any, help_text: Optional[str] = None):
+    """Render a rectangle-styled stat box using HTML."""
+    help_attr = f' title="{help_text}"' if help_text else ''
+    st.markdown(f"""
+        <div class="stat-box"{help_attr}>
+            <div class="stat-box-label">{label}</div>
+            <div class="stat-box-value">{value}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
 def draw_team_radar(
     team_stats: dict,
@@ -585,44 +629,43 @@ def teams():
     # TEAM HEADER
     # ============================================================================
 
-    st.markdown(f" ### {team_name}")
+    st.markdown(f'<div class="team-name-box">{team_name}</div>', unsafe_allow_html=True)
 
     # Quick stats header
-    with st.container(border=True):
+    with st.container():
         col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
-            st.metric(
+            render_stat_box(
                 "Position",
                 f"{team_position}/{total_teams}",
-                help="Current league standing",
+                help_text="Current league standing"
             )
 
         with col2:
-            st.metric(
+            render_stat_box(
                 "Matches played",
-                int(team_row.get("matches_played", 0)),
+                int(team_row.get("matches_played", 0))
             )
 
         with col3:
-            st.metric(
+            render_stat_box(
                 "Points",
-                int(team_row.get("total_points", 0)),
+                int(team_row.get("total_points", 0))
             )
 
         with col4:
-            st.metric(
+            render_stat_box(
                 "Points per Game",
-                format_number(team_row.get("points_per_game"), 2),
+                format_number(team_row.get("points_per_game"), 2)
             )
-            
 
         with col5:
-            st.metric(
-                    "Goal Diff",
-                    f"{int(team_row.get('goal_difference', 0)):+d}",
-                    help="Goals scored minus goals conceded",
-                )
+            render_stat_box(
+                "Goal Diff",
+                f"{int(team_row.get('goal_difference', 0)):+d}",
+                help_text="Goals scored minus goals conceded"
+            )
 
     # ============================================================================
     # LOAD ALL TEAM STATS
@@ -635,7 +678,7 @@ def teams():
     league_averages = {}
 
     try:
-        # Get selected team's stats in ONE database call
+        # Get selected team's stats in one database call
         all_stats = get_all_team_stats(selected_team_id, selected_season_id)
         
         attack_stats = all_stats.get('attack', {})
@@ -684,32 +727,32 @@ def teams():
                 with st.expander("General stats", expanded=True):
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Goals for", int(safe_get(attack_stats, "total_goals", 0)))
-                        st.metric("Total xG", float(safe_get(attack_stats, "total_xg", 0)))
-                        st.metric("xG Diff", float(safe_get(attack_stats, "xg_difference", 0)))
+                        render_stat_box("Goals for", int(safe_get(attack_stats, "total_goals", 0)))
+                        render_stat_box("Total xG", float(safe_get(attack_stats, "total_xg", 0)))
+                        render_stat_box("xG Diff", float(safe_get(attack_stats, "xg_difference", 0)))
                     
                     with col2:
-                        st.metric("Goals against", int(safe_get(defense_stats, "total_goals_conceded", 0)))
-                        st.metric("Total xGA", format_number(safe_get(defense_stats, "total_xga", 0)))
-                        st.metric("xGA Diff", format_number(safe_get(defense_stats, "xga_difference", 0)))
+                        render_stat_box("Goals against", int(safe_get(defense_stats, "total_goals_conceded", 0)))
+                        render_stat_box("Total xGA", format_number(safe_get(defense_stats, "total_xga", 0)))
+                        render_stat_box("xGA Diff", format_number(safe_get(defense_stats, "xga_difference", 0)))
                         
                     with col3:
-                        st.metric("Clean Sheets", int(safe_get(defense_stats, "clean_sheets", 0)))
-                        st.metric("Clean Sheets %", format_percentage(safe_get(defense_stats, "clean_sheet_pct", 0)))
+                        render_stat_box("Clean Sheets", int(safe_get(defense_stats, "clean_sheets", 0)))
+                        render_stat_box("Clean Sheets %", format_percentage(safe_get(defense_stats, "clean_sheet_pct", 0)))
                         
             if btts_stats:
                 with st.expander("BTTS Statistics", expanded=True):
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("AVG Goals per Match", float(safe_get(btts_stats, "overall_avg_goals_per_match", 0)))
-                        st.metric("BTTS %", format_percentage(safe_get(btts_stats, "overall_btts_pct", 0)))
+                        render_stat_box("AVG Goals per Match", float(safe_get(btts_stats, "overall_avg_goals_per_match", 0)))
+                        render_stat_box("BTTS %", format_percentage(safe_get(btts_stats, "overall_btts_pct", 0)))
                         
                     with col2:
-                        st.metric("AVG Goals For", float(safe_get(btts_stats, "overall_avg_scored", 0)))
-                        st.metric("AVG xG per Match", float(safe_get(btts_stats, "overall_avg_xg", 0)))
+                        render_stat_box("AVG Goals For", float(safe_get(btts_stats, "overall_avg_scored", 0)))
+                        render_stat_box("AVG xG per Match", float(safe_get(btts_stats, "overall_avg_xg", 0)))
                     with col3:
-                        st.metric("AVG Goals Against", float(safe_get(btts_stats, "overall_avg_conceded", 0)))
-                        st.metric("AVG xGA per Match", float(safe_get(btts_stats, "overall_avg_xga", 0)))
+                        render_stat_box("AVG Goals Against", float(safe_get(btts_stats, "overall_avg_conceded", 0)))
+                        render_stat_box("AVG xGA per Match", float(safe_get(btts_stats, "overall_avg_xga", 0)))
             
             else:
                 st.warning("No overview statistics available for this team.")
@@ -760,15 +803,15 @@ def teams():
                     draws = results_list.count("D")
                     losses = results_list.count("L")
 
-                    # Compact metrics row (unchanged)
-                    with st.container(border=True):
+                    # Compact metrics row
+                    with st.container():
                         m1, m2, m3 = st.columns(3)
                         with m1:
-                            st.metric("Wins", wins)
+                            render_stat_box("Wins", wins)
                         with m2:
-                            st.metric("Draws", draws)
+                            render_stat_box("Draws", draws)
                         with m3:
-                            st.metric("Losses", losses)
+                            render_stat_box("Losses", losses)
 
                     # Charts section (unchanged)
                     col1, col2 = st.columns([2, 1])
@@ -822,16 +865,16 @@ def teams():
                     goals_against = safe_get(form_data, "goals_against_last", 0)
                     goal_diff = goals_for - goals_against
 
-                    with st.container(border=True):
+                    with st.container():
                         c1, c2, c3, c4 = st.columns(4)
                         with c1:
-                            st.metric("Total points", int(total_points))
+                            render_stat_box("Total points", int(total_points))
                         with c2:
-                            st.metric("Goals scored", int(goals_for))
+                            render_stat_box("Goals scored", int(goals_for))
                         with c3:
-                            st.metric("Goals conceded", int(goals_against))
+                            render_stat_box("Goals conceded", int(goals_against))
                         with c4:
-                            st.metric("Goal diff", f"{int(goal_diff):+d}")
+                            render_stat_box("Goal diff", f"{int(goal_diff):+d}")
                 else:
                     st.info("No recent form data available.")
             else:
@@ -1225,7 +1268,7 @@ def teams():
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.metric("Fair Play Score", f"{fair_play_score:.2f}")
+                        render_stat_box("Fair Play Score", f"{fair_play_score:.2f}")
                     with col2:
                         st.markdown(f"**Rating:** :{color}[{fair_play_rating}]")
                     
