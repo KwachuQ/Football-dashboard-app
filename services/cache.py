@@ -166,13 +166,33 @@ class CacheWarmer:
             if not seasons_df.empty and not season_id:
                 season_id = seasons_df.iloc[0]['season_id']
             
-            # Warm league standings
+            # Warm league standings and stats
             if season_id:
                 get_league_standings(season_id)
                 get_bulk_league_stats(season_id)
             
-            # Warm upcoming fixtures
-            get_upcoming_fixtures(season_id=season_id, limit=20)
+            # Warm upcoming fixtures and its team data to speed up Compare page
+            fixtures_df = get_upcoming_fixtures(season_id=season_id, limit=20)
+            if not fixtures_df.empty:
+                # Warm first 5 fixtures specifically for Compare page
+                from services.queries import get_all_team_stats, get_btts_analysis, get_team_form, get_head_to_head
+                
+                # Deduplicate team IDs
+                teams_to_warm = set()
+                h2h_to_warm = []
+                
+                for _, row in fixtures_df.head(5).iterrows():
+                    teams_to_warm.add(row['home_team_id'])
+                    teams_to_warm.add(row['away_team_id'])
+                    h2h_to_warm.append((row['home_team_id'], row['away_team_id']))
+                
+                for tid in teams_to_warm:
+                    get_all_team_stats(tid, season_id)
+                    get_btts_analysis(tid, season_id)
+                    get_team_form(tid, 5)
+                
+                for t1, t2 in h2h_to_warm:
+                    get_head_to_head(t1, t2)
             
             logger.info("Cache warm-up completed")
             

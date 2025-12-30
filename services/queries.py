@@ -9,6 +9,28 @@ import streamlit as st
 
 logger = logging.getLogger(__name__)
 
+def get_active_season_from_config() -> int:
+    """Get active season ID from config/league_config.yaml."""
+    import yaml
+    from pathlib import Path
+    
+    # Try multiple paths to find the config
+    root = Path(__file__).resolve().parents[1]
+    paths = [
+        root / "config" / "league_config.yaml",
+        root / "docs" / "league_config.yaml"
+    ]
+    
+    for p in paths:
+        if p.exists():
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    return int(config.get('active_season', {}).get('season_id', 76477))
+            except Exception:
+                continue
+    return 76477
+
 def _safe_int(val: Any, default: int = 0) -> int:
     """Convert DB/ENV values safely to int, treating None/'None'/'' as default."""
     if val is None:

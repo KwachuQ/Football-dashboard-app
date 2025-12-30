@@ -835,8 +835,12 @@ def compare():
     with st.sidebar:
         st.header("Select Fixture")
         
-        # Get active season from session state (set in Home page)
-        season_id = st.session_state.get('active_season_id', 1)
+        # Get active season from session state (set in Home page) or fallback to config
+        from services.queries import get_active_season_from_config
+        season_id = st.session_state.get('active_season_id')
+        if not season_id:
+            season_id = get_active_season_from_config()
+            st.session_state.active_season_id = season_id
         
         try:
             # Get upcoming fixtures with explicit date range
@@ -855,7 +859,7 @@ def compare():
         )
             fixtures_df = get_upcoming_fixtures(
                 season_id=season_id,
-                start_date=today,
+                start_date=start_date if start_date else today,
                 end_date=end_date,
                 limit=50
             )
