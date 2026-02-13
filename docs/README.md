@@ -4,6 +4,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.51-23BF00.svg)
 ![Pandas](https://img.shields.io/badge/Pandas-2.3+-BC00BF.svg)
 ![Plotly](https://img.shields.io/badge/Plotly-6.5+-0089BF.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 # ⚽ Football Analytics Dashboard
 
