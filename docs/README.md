@@ -6,11 +6,11 @@
 ![Plotly](https://img.shields.io/badge/Plotly-6.5+-0089BF.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-# ⚽ Football Analytics Dashboard
+# Football Analytics Dashboard
 
 A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a separate data pipeline to provide real-time football statistics and predictions.
 
-## 🎯 Features
+## Features
 
 - **Multi-League Support**: Analyze teams across different leagues (Ekstraklasa and more)
 - **Upcoming Fixtures**: View upcoming matches with predictions and team form
@@ -21,14 +21,14 @@ A Streamlit-based web application for visualizing football analytics, team perfo
 - **Data Freshness Monitoring**: Track when data was last updated
 - **Export Capabilities**: Download data as CSV and charts as PNG/SVG
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Python 3.11+**
 - **PostgreSQL 17+** (with populated gold schema from data pipeline)
 - **Docker & Docker Compose** (optional, for containerized deployment)
 - **Git**
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone the Repository
 
@@ -115,7 +115,7 @@ streamlit run app/app.py
 
 The app will open automatically in your browser at `http://localhost:8501`
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 ### Build and Run with Docker Compose
 
@@ -145,7 +145,7 @@ POSTGRES_HOST=host.docker.internal  # For connecting to host machine's Postgres
 POSTGRES_HOST=postgres  # If using a Postgres service in docker-compose
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Football-dashboard-app/
@@ -170,7 +170,7 @@ Football-dashboard-app/
 └── README.md                    # This file
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Database Settings
 
@@ -205,7 +205,7 @@ The application expects the following gold mart tables in your PostgreSQL databa
 
 These tables should be populated by your data pipeline (see [docs/plan.md](docs/plan.md) for details).
 
-## 🧪 Testing
+## Testing
 
 Run all tests:
 
@@ -225,7 +225,7 @@ Run specific test file:
 pytest tests/test_db_connection.py -v
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Database Connection Issues
 
@@ -271,9 +271,9 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.append(PROJECT_ROOT)
 ```
 
-## 📊 Current Implementation Status
+## Current Implementation Status
 
-### ✅ Completed (Phase 1: Foundation)
+### Completed (Phase 1: Foundation)
 - [x] Project structure and repository initialization
 - [x] Database connection with SQLAlchemy ([services/db.py](services/db.py))
 - [x] Configuration management with Pydantic ([config/settings.py](config/settings.py))
@@ -294,7 +294,7 @@ sys.path.append(PROJECT_ROOT)
 
 See [docs/plan.md](docs/plan.md) for the complete implementation roadmap.
 
-## 🛠️ Development
+## Development
 
 ### Code Quality
 
@@ -316,12 +316,12 @@ python -c "from services.db import check_connection; print('✓ Imports OK')"
 4. Update documentation
 5. Submit pull request
 
-## 📖 Documentation
+## Documentation
 
 - **Implementation Plan**: [docs/plan.md](docs/plan.md) - Detailed 7-week roadmap
 - **License**: [LICENSE](LICENSE) - MIT License
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 
@@ -331,18 +331,18 @@ Contributions are welcome! Please:
 4. Ensure all tests pass
 5. Submit a pull request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [Streamlit](https://streamlit.io/)
 - Database layer powered by [SQLAlchemy](https://www.sqlalchemy.org/)
 - Visualizations using [Plotly](https://plotly.com/) and [Altair](https://altair-viz.github.io/)
 - Configuration management with [Pydantic](https://docs.pydantic.dev/)
 
-## 📧 Support
+## Support
 
 For issues and questions:
 - Open an issue on GitHub
@@ -351,6 +351,3 @@ For issues and questions:
 
 ---
 
-**Status**: Phase 1 Complete ✅ | Active Development 🚀
-
-Built with ⚽ for football analytics
