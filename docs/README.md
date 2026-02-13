@@ -1,3 +1,10 @@
+
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17.6-336791.svg)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.51-23BF00.svg)
+![Pandas](https://img.shields.io/badge/Pandas-2.3+-BC00BF.svg)
+![Plotly](https://img.shields.io/badge/Plotly-6.5+-0089BF.svg)
+
 # ⚽ Football Analytics Dashboard
 
 A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a separate data pipeline to provide real-time football statistics and predictions.
@@ -16,7 +23,7 @@ A Streamlit-based web application for visualizing football analytics, team perfo
 ## 📋 Prerequisites
 
 - **Python 3.11+**
-- **PostgreSQL 12+** (with populated gold schema from data pipeline)
+- **PostgreSQL 17+** (with populated gold schema from data pipeline)
 - **Docker & Docker Compose** (optional, for containerized deployment)
 - **Git**
 
