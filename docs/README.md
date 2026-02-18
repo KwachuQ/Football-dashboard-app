@@ -1,4 +1,3 @@
-
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17.6-336791.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.51-23BF00.svg)
@@ -8,18 +7,20 @@
 
 # Football Analytics Dashboard
 
-A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a separate data pipeline to provide real-time football statistics and predictions.
+A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a data pipeline from my other project (([Football-data-pipeline](https://github.com/KwachuQ/Football-data-pipeline))) to provide real-time football statistics and predictions.
+
+Check it out here: https://football-dashboard-app.streamlit.app/Home
 
 ## Features
 
 - **Multi-League Support**: Analyze teams across different leagues (Ekstraklasa and more)
-- **Upcoming Fixtures**: View upcoming matches with predictions and team form
-- **Team Statistics**: Deep dive into attack, defense, possession, and discipline metrics
-- **Head-to-Head Analysis**: Compare historical matchups between teams
+- **Upcoming Fixtures**: View upcoming matches with predictions, team form, and head-to-head records
+- **Team Statistics**: Deep dive into attack, defense, possession, discipline, and BTTS metrics with radar charts and league percentile rankings
+- **Head-to-Head Comparison**: Compare two teams side-by-side based on upcoming fixtures, including form, scoring profiles, and historical matchups
 - **Performance Insights**: League-wide trends, anomalies, and performance tracking
-- **Interactive Visualizations**: Charts and graphs powered by Plotly and Altair
-- **Data Freshness Monitoring**: Track when data was last updated
-- **Export Capabilities**: Download data as CSV and charts as PNG/SVG
+- **Interactive Visualizations**: Charts and graphs powered by Plotly (line charts, pie charts, radar charts, bar charts)
+- **Data Freshness Monitoring**: Track when data was last updated with database health checks
+- **Caching & Performance**: Custom caching layer with cache warming, monitoring, and page load timing
 
 ## Prerequisites
 
@@ -110,64 +111,49 @@ tests/test_db_connection.py::test_db_connection PASSED
 ### 5. Run the Application
 
 ```bash
-streamlit run app/app.py
+streamlit run app.py
 ```
 
 The app will open automatically in your browser at `http://localhost:8501`
-
-## Docker Deployment
-
-### Build and Run with Docker Compose
-
-```bash
-# Build the image
-docker-compose build
-
-# Start the application
-docker-compose up -d
-
-# View logs
-docker-compose logs -f app
-
-# Stop the application
-docker-compose down
-```
-
-The application will be available at `http://localhost:8501`
-
-### Environment Variables in Docker
-
-When using Docker, ensure your `.env` file is configured with:
-
-```env
-POSTGRES_HOST=host.docker.internal  # For connecting to host machine's Postgres
-# OR
-POSTGRES_HOST=postgres  # If using a Postgres service in docker-compose
-```
 
 ## Project Structure
 
 ```
 Football-dashboard-app/
-├── app/
-│   └── app.py                    # Main Streamlit application entry point
-├── components/                   # Reusable UI components (planned)
+├── app.py                        # Main Streamlit entry point (redirects to Home)
+├── pages/
+│   ├── 1_Home.py                 # Home page with league info, quick stats, DB status
+│   ├── 2_Fixtures.py             # Upcoming fixtures with predictions and form
+│   ├── 3_Teams.py                # Team statistics, form, radar charts, discipline
+│   └── 4_Compare.py              # Head-to-head team comparison from fixtures
+├── components/
+│   └── __init__.py               # Reusable UI components (filters, charts, etc.)
 ├── config/
-│   └── settings.py              # Pydantic settings and configuration
+│   ├── settings.py               # Pydantic settings and configuration
+│   └── league_config.yaml        # League and season configuration
 ├── services/
 │   ├── __init__.py
-│   └── db.py                    # Database connection and session management
-├── tests/
-│   └── test_db_connection.py    # Database connectivity tests
+│   ├── db.py                     # Database connection, engine, session management
+│   ├── queries.py                # Parameterized SQL queries for all data access
+│   └── cache.py                  # Caching utilities, cache warming, monitoring
+├── src/
+│   └── models/
+│       ├── base.py               # SQLAlchemy declarative base
+│       └── upcoming_fixtures.py  # UpcomingFixtures ORM model
+├── tests/                        # Pytest test suite
+├── scripts/
+│   └── run_tests.py              # Test runner with custom configuration
+├── static/                       # Static assets
 ├── docs/
-│   └── plan.md                  # Detailed implementation plan
-├── .env.example                 # Environment variables template
+│   ├── README.md                 # This file
+├── aws_logs/                     # AWS deployment logs
+├── .streamlit/
+│   └── config.toml               # Streamlit configuration
+├── .env.example                  # Environment variables template
 ├── .gitignore
-├── docker-compose.yml           # Docker orchestration
-├── Dockerfile                   # Container image definition
-├── pytest.ini                   # Pytest configuration
-├── requirements.txt             # Python dependencies
-└── README.md                    # This file
+├── pytest.ini                    # Pytest configuration
+├── requirements.txt              # Python dependencies
+└── LICENSE                       # MIT License
 ```
 
 ## Configuration
@@ -189,6 +175,10 @@ The application uses Pydantic for settings validation. Configuration is loaded f
 - `DB_POOL_RECYCLE`: Connection recycle time in seconds (default: `1800`)
 - `SQLALCHEMY_ECHO`: Enable SQL query logging (default: `false`)
 
+### League Configuration
+
+League and season settings are managed via [`config/league_config.yaml`](config/league_config.yaml). The active league defaults to Ekstraklasa (Poland). The active season ID is stored in `st.session_state` and used across all pages.
+
 ### Database Requirements
 
 The application expects the following gold mart tables in your PostgreSQL database:
@@ -202,8 +192,44 @@ The application expects the following gold mart tables in your PostgreSQL databa
 - `mart_match_predictions`
 - `mart_head_to_head`
 - `mart_team_season_summary`
+- `mart_upcoming_fixtures`
 
-These tables should be populated by your data pipeline (see [docs/plan.md](docs/plan.md) for details).
+These tables should be populated by your data pipeline (you can find the pipeline here: https://github.com/KwachuQ/Football-data-pipeline).
+
+## Pages
+
+### Home (`pages/1_Home.py`)
+- League and season information from config
+- Quick statistics (total seasons, active league, upcoming fixtures count)
+- Database connection health check
+- Cache hit rate monitoring
+
+### Fixtures (`pages/2_Fixtures.py`)
+- Date range filter with configurable lookahead (default 45 days)
+- Fixtures overview table with predictions, form indicators, and H2H records
+- Detailed match expanders with prediction probabilities, fair odds, and recent form
+- Bulk data loading for team forms and head-to-head records
+
+### Teams (`pages/3_Teams.py`)
+- Team selector with season filter
+- Team header with position, matches played, points, PPG, and goal difference
+- Tab-based layout:
+  - **Overview**: Season summary stats, BTTS analysis, xG metrics
+  - **Form**: Configurable form window (5/10/15/20 matches), points-per-match line chart, W/D/L pie chart
+  - **Attack**: Goals scored, shots, accuracy with radar charts and league percentile tables
+  - **Defense**: Goals conceded, tackles, clean sheets with radar charts
+  - **Possession**: Pass completion, possession %, territory control
+  - **Discipline**: Yellow/red cards, fouls, fair play rating
+- Radar charts using `mplsoccer` with league average overlays
+- Conditional formatting on stats tables (green/red for above/below average)
+
+### Compare (`pages/4_Compare.py`)
+- Fixture selector from upcoming matches (sidebar)
+- **Head-to-Head Statistics**: Win/draw/loss record, stacked bar chart, goals and BTTS stats, over/under goal thresholds
+- **Team Cards**: Side-by-side stats with form blocks (overall + home/away), tabbed stats tables with colored comparison
+- **Current Form Comparison**: Points per game (home PPG vs away PPG), last 5 results breakdown by overall/home/away
+- **Goals Scored Comparison**: Full-time and 1st half / 2nd half scored-per-game breakdowns
+- **Goals Conceded Comparison**: Defensive analysis with conceded-per-game tables
 
 ## Testing
 
@@ -225,6 +251,12 @@ Run specific test file:
 pytest tests/test_db_connection.py -v
 ```
 
+Run tests excluding slow tests:
+
+```bash
+python scripts/run_tests.py
+```
+
 ## Troubleshooting
 
 ### Database Connection Issues
@@ -238,98 +270,23 @@ pytest tests/test_db_connection.py -v
 
 **Problem:** Database connection test fails
 
-**Solution:** 
+**Solution:**
 1. Verify PostgreSQL is running: `pg_isready -h localhost -p 5432`
 2. Check credentials are correct
 3. Ensure database exists: `psql -U postgres -l`
 4. Verify network connectivity and firewall rules
 
-### Docker Issues
-
-**Problem:** Cannot connect to database from Docker container
-
-**Solution:** Use `host.docker.internal` as `POSTGRES_HOST` when connecting to database on host machine
-
-**Problem:** Port 8501 already in use
-
-**Solution:** Either stop the conflicting service or change the port mapping in [docker-compose.yml](docker-compose.yml):
-```yaml
-ports:
-  - "8502:8501"  # Use port 8502 on host
-```
-
 ### Import Errors
 
 **Problem:** `ModuleNotFoundError: No module named 'services'`
 
-**Solution:** Ensure you're running from the project root and Python path is configured correctly. The [app/app.py](app/app.py) includes path configuration, but verify:
+**Solution:** Ensure you're running from the project root. The [`app.py`](app.py) includes path configuration that adds the project root to `sys.path`:
 
 ```python
-import sys
-import os
-PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-sys.path.append(PROJECT_ROOT)
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 ```
-
-## Current Implementation Status
-
-### Completed (Phase 1: Foundation)
-- [x] Project structure and repository initialization
-- [x] Database connection with SQLAlchemy ([services/db.py](services/db.py))
-- [x] Configuration management with Pydantic ([config/settings.py](config/settings.py))
-- [x] Basic Streamlit app scaffold ([app/app.py](app/app.py))
-- [x] Docker containerization
-- [x] Environment variable validation
-- [x] Database health check functionality
-- [x] Initial test suite
-
-### 🚧 In Progress / Planned
-- [ ] SQLAlchemy models for gold marts (Phase 2)
-- [ ] Parameterized query functions (Phase 2)
-- [ ] UI pages: Fixtures, Teams, Head-to-Head, Insights (Phase 3)
-- [ ] Interactive visualizations with Plotly/Altair (Phase 4)
-- [ ] Caching strategies (Phase 2)
-- [ ] Multi-league support (Phase 6)
-- [ ] Match predictions display (Phase 5)
-
-See [docs/plan.md](docs/plan.md) for the complete implementation roadmap.
-
-## Development
-
-### Code Quality
-
-We use `pytest` for testing. Before committing, ensure:
-
-```bash
-# Run tests
-pytest
-
-# Check for import errors
-python -c "from services.db import check_connection; print('✓ Imports OK')"
-```
-
-### Adding New Features
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Implement feature following project structure
-3. Add tests in `tests/`
-4. Update documentation
-5. Submit pull request
-
-## Documentation
-
-- **Implementation Plan**: [docs/plan.md](docs/plan.md) - Detailed 7-week roadmap
-- **License**: [LICENSE](LICENSE) - MIT License
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Ensure all tests pass
-5. Submit a pull request
 
 ## License
 
@@ -339,15 +296,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Built with [Streamlit](https://streamlit.io/)
 - Database layer powered by [SQLAlchemy](https://www.sqlalchemy.org/)
-- Visualizations using [Plotly](https://plotly.com/) and [Altair](https://altair-viz.github.io/)
+- Visualizations using [Plotly](https://plotly.com/) and [mplsoccer](https://mplsoccer.readthedocs.io/)
 - Configuration management with [Pydantic](https://docs.pydantic.dev/)
-
-## Support
-
-For issues and questions:
-- Open an issue on GitHub
-- Review troubleshooting section above
-- Check [docs/plan.md](docs/plan.md) for architectural details
-
 ---
-
