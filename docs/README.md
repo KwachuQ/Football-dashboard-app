@@ -7,7 +7,7 @@
 
 # Football Analytics Dashboard
 
-A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a data pipeline from my other project (([Football-data-pipeline](https://github.com/KwachuQ/Football-data-pipeline))) to provide real-time football statistics and predictions.
+A Streamlit-based web application for visualizing football analytics, team performance metrics, match predictions, and league insights. This app connects to a PostgreSQL database populated by a data pipeline from my other project ([Football-data-pipeline](https://github.com/KwachuQ/Football-data-pipeline)) to provide real-time football statistics and predictions.
 
 Check it out here: https://football-dashboard-app.streamlit.app/Home
 
