@@ -7,3 +7,7 @@ __pycache__/
 Football-dashboard-app.code-workspace
 aws_logs/
 .idea/
+
+# Planning docs
+docs/plan.md
+to_do.txt
