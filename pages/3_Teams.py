@@ -797,7 +797,7 @@ def teams():
                         )
 
                     st.markdown(form_html, unsafe_allow_html=True)
-                    st.caption("W = Win | D = Draw | L = Loss (most recent on right)")
+                    st.caption("W = Win | D = Draw | L = Loss (most recent on left)")
 
                     wins = results_list.count("W")
                     draws = results_list.count("D")
